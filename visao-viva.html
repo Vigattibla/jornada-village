@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Jornada — visão ao vivo</title>
+<style>
+html,body{margin:0;height:100%;background:#111;color:#eee;font:13px system-ui,sans-serif;overflow:hidden;touch-action:none;user-select:none}
+#tela{position:fixed;inset:0;width:100%;height:100%}
+#hud{position:fixed;left:8px;top:8px;background:#000b;padding:8px 10px;border-radius:8px;max-width:290px}
+#hud label{display:flex;gap:6px;align-items:center;margin:4px 0}
+#hud input[type=range]{flex:1}
+#hud.min label,#hud.min button,#hud.min small{display:none}
+#hud b{cursor:pointer}
+#info{display:block;font:11px ui-monospace,monospace;color:#9ec;white-space:pre;margin:4px 0}
+body.cam .t{display:none}
+#ctl{position:fixed;bottom:14px;left:0;right:0;display:flex;justify-content:space-between;padding:0 14px;pointer-events:none}
+#ctl button{pointer-events:auto;width:72px;height:72px;border-radius:50%;border:2px solid #fff8;background:#0007;color:#fff;font-size:26px;touch-action:none}
+</style>
+</head>
+<body>
+<canvas id="tela"></canvas>
+<div id="hud">
+  <b>Visão ao vivo</b>
+  <span id="info"></span>
+  <label>Fonte <select id="fonte"><option value="teste">cena de teste</option><option value="cam">câmera</option></select></label>
+  <label>Sólido <select id="modo"><option value="contraste">escuro ou colorido</option><option value="cor">cor-chave</option></select></label>
+  <label>Corpo <select id="corpo"><option value="pele">cor de pele</option><option value="ia">pele + mão por IA</option><option value="off">desligado</option></select></label>
+  <label>Limiar <input id="limiar" type="range" min="20" max="230" value="120"></label>
+  <label>Saturação <input id="sat" type="range" min="5" max="90" value="30"></label>
+  <label>Tamanho Bê <input id="tam" type="range" min="5" max="30" value="11"></label>
+  <label><input id="verMasc" type="checkbox" checked> ver colisão</label>
+  <label><input id="exigeQR" type="checkbox" checked> Bê nasce no QR</label>
+  <label class="t">Vão <input id="vao" type="range" min="0" max="70" value="24"></label>
+  <label class="t"><input id="mao" type="checkbox"> mão no vão</label>
+  <label class="t"><input id="balanco" type="checkbox"> balanço do celular</label>
+  <button id="amostra">amostrar cor-chave</button>
+  <small style="display:block;margin-top:4px">toque = soltar Bê · arrastar = mover celular (teste) · ← → espaço</small>
+</div>
+<div id="ctl"><div><button id="bE">◀</button> <button id="bD">▶</button></div><button id="bP">▲</button></div>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+// quadro da câmera (QW×QH) -> grade de análise (GW×GH): cada célula vira sólido/ar
+const QW = 640, QH = 360, GW = 192, GH = 108, N = GW * GH;
+const VW = 960, VH = 540;                        // janela do "celular" na cena de teste (px de mundo)
+const tela = $('tela'), ctx = tela.getContext('2d');
+const novo = (w, h) => Object.assign(document.createElement('canvas'), {width: w, height: h});
+const quadro = novo(QW, QH), qctx = quadro.getContext('2d', {willReadFrequently: true});
+const an = novo(GW, GH), actx = an.getContext('2d', {willReadFrequently: true});
+const mcan = novo(GW, GH), mctx = mcan.getContext('2d'), mimg = mctx.createImageData(GW, GH);
+const prob = new Float32Array(N), bruta = new Uint8Array(N), masc = new Uint8Array(N);
+// tipos de área (padrões impressos + corpo): masc guarda o tipo de cada célula
+const AR = 0, CHAO = 1, CORPO = 2, PERIGO = 3, DOURADA = 4, CHEGADA = 5;
+const COR_TIPO = [null, [255, 40, 160], [0, 220, 255], [255, 0, 0], [255, 220, 0], [0, 230, 90]];
+const tipoBruto = new Uint8Array(N), pegas = [];
+let maoIA = null, maoPts = [];
+const QRA = {ok: false, x0: 0, y0: 0, x1: 0, y1: 0, dado: ''}, acum = {x: 0, y: 0};   // caixa do QR na grade, presa ao mundo
+const cinza = new Float32Array(N), cinzaRef = new Float32Array(N), aplicado = {x: 0, y: 0};
+let temAnterior = false;   // fluxo contra um quadro-chave: parado = zero deriva
+const WW = 1900, WH = 820, cena = novo(WW, WH), cctx = cena.getContext('2d');
+const cam = {x: 300, y: 130}, camAnt = {x: 300, y: 130};
+let ATLAS, MAPA, video = null, fonte = 'teste', chave = null, amostrando = false;
+const sprite = new Image(); sprite.src = 'be-spritesheet.png';
+const qrImg = new Image(); qrImg.src = 'qr-jogo.png';
+const P = {x: 12, y: 20, vx: 0, vy: 0, chao: false, coy: 0, cortou: true, olha: 1, anim: 'fall', q: 0, tq: 0, pouso: 0};
+const salvo = {x: 12, y: 20, ok: false};
+const teclas = {e: false, d: false, pulo: false, usado: false};
+const est = {ativo: false, quedas: 0, mortes: 0, douradas: 0, chegou: false, invul: 0, erro: 0, nErro: 0, fx: 0, fy: 0, rx: 0, ry: 0, fps: 0};
+
+function rng(s) { return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
+
+// ---------- cena de teste: parede + 2 folhas só com plataformas + vão físico ----------
+function desenhaCena() {
+  const g = cctx, R = rng(7), k = 560 / 424, y0 = 200, vao = +$('vao').value * 2;
+  g.fillStyle = '#d8cdb9'; g.fillRect(0, 0, WW, WH);
+  for (let i = 0; i < 9000; i++) { g.fillStyle = R() < .5 ? '#cdc1ab' : '#e2d8c6'; g.fillRect(R() * WW | 0, R() * WH | 0, 2 + R() * 5 | 0, 2 + R() * 5 | 0); }
+  const xs = [260, 260 + 560 + vao];
+  [MAPA.folhas[0], MAPA.folhas[5]].forEach((f, i) => {
+    const x0 = xs[i];
+    g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(x0 + 5, y0 + 6, 560, 396);
+    g.fillStyle = '#f6f4ef'; g.fillRect(x0, y0, 560, 396);
+    for (const p of f.plataformas) {
+      g.fillStyle = '#23396A'; g.fillRect(x0 + p.x * k, y0 + p.y * k, p.w * k, Math.min(p.h, 300 - p.y) * k);
+      g.fillStyle = '#2A89D5'; g.fillRect(x0 + p.x * k, y0 + p.y * k, p.w * k, 3 * k);
+    }
+    for (const z of f.zonasMorte) {                // perigo impresso: vermelho com espinhos
+      const zx = x0 + z.x * k, zy = y0 + z.y * k, zw = z.w * k, zh = (300 - z.y) * k;
+      g.fillStyle = '#D7263D'; g.fillRect(zx, zy, zw, zh);
+      g.fillStyle = '#fff';
+      for (let s = 0; s < 4; s++) { g.beginPath(); g.moveTo(zx + s * zw / 4 + 2, zy + zh - 2); g.lineTo(zx + (s + .5) * zw / 4, zy + 8); g.lineTo(zx + (s + 1) * zw / 4 - 2, zy + zh - 2); g.fill(); }
+    }
+    for (const d of f.douradas) { g.fillStyle = '#F2C230'; g.beginPath(); g.arc(x0 + d.x * k, y0 + d.y * k, 9 * k, 0, 7); g.fill(); }
+    if (i === 1) {                                 // chegada impressa: verde
+      g.fillStyle = '#2BA84A'; g.fillRect(x0 + 380 * k, y0 + 204 * k, 32 * k, 48 * k);
+      g.fillStyle = '#fff'; g.fillRect(x0 + 388 * k, y0 + 212 * k, 16 * k, 16 * k);
+    }
+    g.fillStyle = '#A9C0D2'; g.font = 'bold 22px system-ui'; g.fillText(f.lugar, x0 + 20, y0 + 40);
+  });
+  if (qrImg.naturalWidth) { g.fillStyle = '#fff'; g.fillRect(80, 320, 170, 170); g.drawImage(qrImg, 90, 330, 150, 150); }   // QR na parede
+  if ($('mao').checked) {                         // mão atravessando o vão na altura do chão
+    const yc = y0 + 252 * k, xa = xs[0] + 560 - 46, xb = xs[1] + 46;
+    g.fillStyle = '#c8906c';
+    g.beginPath(); g.roundRect(xa, yc - 3, xb - xa, 30, 14); g.fill();
+    g.beginPath(); g.roundRect((xa + xb) / 2 - 44, yc + 14, 88, 420, 30); g.fill();
+    g.strokeStyle = '#a8705a'; g.lineWidth = 2;
+    for (let j = 1; j < 4; j++) { g.beginPath(); g.moveTo(xa + 10, yc - 3 + j * 7); g.lineTo(xa + 50, yc - 3 + j * 7); g.stroke(); }
+  }
+}
+
+// ---------- captura ----------
+function capturaQuadro(t) {
+  if (fonte === 'cam' && video && video.readyState >= 2) {
+    const vw = video.videoWidth, vh = video.videoHeight, s = Math.max(QW / vw, QH / vh);
+    qctx.drawImage(video, (QW - vw * s) / 2, (QH - vh * s) / 2, vw * s, vh * s);
+    if (corpoModo === 'ia') detectaMao();
+    return;
+  }
+  if ($('balanco').checked) { cam.x = 300 + 70 * Math.sin(t * .7); cam.y = 130 + 18 * Math.sin(t * 1.13); }
+  cam.x = Math.max(0, Math.min(WW - VW, cam.x)); cam.y = Math.max(0, Math.min(WH - VH, cam.y));
+  qctx.drawImage(cena, cam.x, cam.y, VW, VH, 0, 0, QW, QH);
+  const v = qctx.createRadialGradient(QW / 2, QH / 2, QH * .3, QW / 2, QH / 2, QW * .62);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.22)');
+  qctx.fillStyle = v; qctx.fillRect(0, 0, QW, QH);
+  est.rx = -(cam.x - camAnt.x) * GW / VW; est.ry = -(cam.y - camAnt.y) * GH / VH;   // deslocamento real (grade)
+  camAnt.x = cam.x; camAnt.y = cam.y;
+}
+
+// ---------- visão: sólido/ar + deslocamento do celular ----------
+function analisa() {
+  actx.drawImage(quadro, 0, 0, GW, GH);
+  const d = actx.getImageData(0, 0, GW, GH).data, lim = +$('limiar').value, sl = +$('sat').value / 100;
+  const porCor = $('modo').value === 'cor' && chave, pele = corpoModo !== 'off';
+  for (let i = 0, j = 0; i < N; i++, j += 4) {
+    const r = d[j], g = d[j + 1], b = d[j + 2], lum = .299 * r + .587 * g + .114 * b;
+    cinza[i] = lum;
+    let c = classe(r, g, b, lum, lim, sl, pele);
+    if (porCor) c = Math.hypot(r - chave[0], g - chave[1], b - chave[2]) < lim * .5 ? CHAO : c === CHAO ? AR : c;
+    if (c) tipoBruto[i] = c;                       // ar momentâneo mantém o último tipo enquanto prob segura
+    prob[i] = temAnterior ? prob[i] * .4 + (c ? .6 : 0) : (c ? 1 : 0);
+    bruta[i] = prob[i] > .5 ? 1 : 0;
+  }
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {   // tira pixel solto (ruído), mantém plataforma fina
+    const i = y * GW + x;
+    if (!bruta[i]) { masc[i] = AR; continue; }
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if ((dx || dy) && xx >= 0 && xx < GW && yy >= 0 && yy < GH) n += bruta[yy * GW + xx];
+    }
+    masc[i] = n >= 2 ? tipoBruto[i] : AR;
+  }
+  if (corpoModo === 'ia') carimbaMao();
+  if (QRA.ok)                                      // o QR impresso é o pedestal de nascimento: bloco sólido inteiro
+    for (let y = Math.max(0, Math.round(QRA.y0)); y < Math.min(GH, Math.round(QRA.y1)); y++)
+      for (let x = Math.max(0, Math.round(QRA.x0)); x < Math.min(GW, Math.round(QRA.x1)); x++) masc[y * GW + x] = CHAO;
+  if (temAnterior) {
+    const [tx, ty] = fluxo(cinzaRef, cinza), dx = tx - aplicado.x, dy = ty - aplicado.y;
+    aplicado.x = tx; aplicado.y = ty;
+    if (Math.abs(tx) > RB || Math.abs(ty) > RB) { cinzaRef.set(cinza); aplicado.x = aplicado.y = 0; }
+    est.fx = dx; est.fy = dy;
+    P.x += dx; P.y += dy; salvo.x += dx; salvo.y += dy;   // Bê fica preso ao objeto real, não à tela
+    for (const q of pegas) { q.x += dx; q.y += dy; }
+    QRA.x0 += dx; QRA.x1 += dx; QRA.y0 += dy; QRA.y1 += dy; acum.x += dx; acum.y += dy;
+    if (fonte === 'teste') { est.erro += Math.hypot(dx - est.rx, dy - est.ry); est.nErro++; }
+  }
+  else { cinzaRef.set(cinza); aplicado.x = aplicado.y = 0; }
+  temAnterior = true;
+}
+
+// cor -> tipo. Código impresso: azul/escuro = chão · vermelho = perigo · amarelo = dourada · verde = chegada · pele = corpo
+let corpoModo = 'pele';
+function classe(r, g, b, lum, lim, sl, pele) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), c = mx - mn, s = mx ? c / mx : 0;
+  if (s > sl && c > 25) {
+    const h = 60 * (mx === r ? ((g - b) / c + 6) % 6 : mx === g ? (b - r) / c + 2 : (r - g) / c + 4);
+    if ((h < 14 || h > 335) && s > .35) return PERIGO;
+    if (h >= 38 && h < 70 && mx > 140) return DOURADA;
+    if (h >= 85 && h < 170 && s > .35) return CHEGADA;
+    if (pele && h >= 5 && h < 38 && s < .62 && mx > 80) return CORPO;
+    if (s > .45) return CHAO;                     // cor forte não codificada; borda borrada de código vira ar
+  }
+  return lum < lim ? CHAO : AR;
+}
+
+// mão por IA (MediaPipe): esqueleto de 21 pontos vira cápsulas sólidas do tipo CORPO
+const OSSOS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17],[1,5],[0,9],[0,13]];
+async function carregaMaoIA() {
+  const V = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  const v = await import(V + '/vision_bundle.mjs');
+  const fs = await v.FilesetResolver.forVisionTasks(V + '/wasm');
+  maoIA = await v.HandLandmarker.createFromOptions(fs, {
+    baseOptions: {modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate: 'GPU'},
+    runningMode: 'VIDEO', numHands: 2});
+}
+function detectaMao() {
+  if (!maoIA || !video || video.readyState < 2) return;
+  const vw = video.videoWidth, vh = video.videoHeight, s = Math.max(QW / vw, QH / vh), ox = (QW - vw * s) / 2, oy = (QH - vh * s) / 2;
+  const r = maoIA.detectForVideo(video, performance.now());
+  maoPts = r.landmarks.map(m => m.map(l => ({x: (ox + l.x * vw * s) * GW / QW, y: (oy + l.y * vh * s) * GH / QH})));
+}
+function carimbaMao() {
+  for (const m of maoPts) {
+    const rr = Math.max(1, Math.hypot(m[0].x - m[9].x, m[0].y - m[9].y) * .2);
+    for (const [a, b] of OSSOS) {
+      const n = Math.ceil(Math.hypot(m[b].x - m[a].x, m[b].y - m[a].y) * 2) + 1;
+      for (let k = 0; k <= n; k++) {
+        const cx = m[a].x + (m[b].x - m[a].x) * k / n, cy = m[a].y + (m[b].y - m[a].y) * k / n;
+        for (let y = Math.floor(cy - rr); y <= cy + rr; y++) for (let x = Math.floor(cx - rr); x <= cx + rr; x++)
+          if (x >= 0 && x < GW && y >= 0 && y < GH && (x - cx) ** 2 + (y - cy) ** 2 <= rr * rr) masc[y * GW + x] = CORPO;
+      }
+    }
+  }
+}
+
+// fluxo em pirâmide: meia resolução acha o grosso (±2RB células), resolução cheia refina ±2.
+// Cada quadro tem a média tirada: auto-exposição da câmera não vira movimento.
+const RB = 8, GW2 = GW >> 1, GH2 = GH >> 1, a2 = new Float32Array(GW2 * GH2), b2 = new Float32Array(GW2 * GH2);
+function reduz(src, dst) {
+  let m = 0;
+  for (let y = 0; y < GH2; y++) for (let x = 0; x < GW2; x++) {
+    const i = 2 * y * GW + 2 * x, v = (src[i] + src[i + 1] + src[i + GW] + src[i + GW + 1]) / 4;
+    dst[y * GW2 + x] = v; m += v;
+  }
+  return m / (GW2 * GH2);
+}
+function sad(a, b, W, H, dx, dy, mg, d) {
+  let s = 0;
+  for (let y = mg; y < H - mg; y += 2) {
+    const ra = y * W, rb = (y + dy) * W + dx;
+    for (let x = mg; x < W - mg; x += 2) s += Math.abs(b[rb + x] - a[ra + x] - d);
+  }
+  return s;
+}
+function fluxo(a, b) {   // acha (dx,dy) com b(x+dx,y+dy) ≈ a(x,y)
+  const d = reduz(b, b2) - reduz(a, a2);
+  let melhor = Infinity, cx = 0, cy = 0;
+  for (let dy = -RB; dy <= RB; dy++) for (let dx = -RB; dx <= RB; dx++) {
+    const s = sad(a2, b2, GW2, GH2, dx, dy, RB, d);
+    if (s < melhor) { melhor = s; cx = dx; cy = dy; }
+  }
+  if (sad(a2, b2, GW2, GH2, 0, 0, RB, d) <= melhor * 1.02) cx = cy = 0;   // parede lisa: na dúvida, parado
+  const L = 5, custo = new Float64Array(L * L), M = 2 * RB + 2;
+  let bi = 12; melhor = Infinity;
+  for (let j = 0; j < L; j++) for (let i = 0; i < L; i++) {
+    const s = sad(a, b, GW, GH, 2 * cx + i - 2, 2 * cy + j - 2, M, d);
+    custo[j * L + i] = s; if (s < melhor) { melhor = s; bi = j * L + i; }
+  }
+  if (!cx && !cy && custo[12] <= melhor * 1.02) bi = 12;
+  const bx = bi % L, by = bi / L | 0, m0 = custo[bi];
+  let ox = 0, oy = 0;
+  if (bx > 0 && bx < L - 1) { const m = custo[bi - 1], p = custo[bi + 1], q = m - 2 * m0 + p; if (q > 0) ox = (m - p) / (2 * q); }
+  if (by > 0 && by < L - 1) { const m = custo[bi - L], p = custo[bi + L], q = m - 2 * m0 + p; if (q > 0) oy = (m - p) / (2 * q); }
+  const zona = v => Math.abs(v) < .06 ? 0 : v;
+  return [zona(2 * cx + bx - 2 + ox), zona(2 * cy + by - 2 + oy)];
+}
+
+// ---------- física (mesmos números do jogo, em altura-de-Bê) ----------
+const tipo = (x, y) => { x = Math.floor(x); y = Math.floor(y); return x >= 0 && x < GW && y >= 0 && y < GH ? masc[y * GW + x] : AR; };
+const sol = (x, y) => { const t = tipo(x, y); return t === CHAO || t === CORPO; };
+function linha(r, x0, x1) { for (let x = Math.floor(x0); x <= Math.floor(x1); x++) if (sol(x, r)) return true; return false; }
+function pisaChao(r, x0, x1) { for (let x = Math.floor(x0); x <= Math.floor(x1); x++) if (tipo(x, r) === CHAO) return true; return false; }
+
+function renasce() {
+  const S = +$('tam').value, ok = salvo.ok;      // salvo fica no mundo; se estiver fora da vista, Bê espera lá
+  Object.assign(P, ok ? {x: salvo.x, y: salvo.y - S} : {x: GW / 2, y: 4}, {vx: 0, vy: 0, chao: false});
+  est.invul = .6;
+}
+function pegaDourada(x0, y0) {                     // inunda a mancha amarela tocada; centro dela vira "pega"
+  const S = +$('tam').value, vis = new Set([y0 * GW + x0]), fila = [[x0, y0]];
+  let sx = 0, sy = 0;
+  while (fila.length) {
+    const [x, y] = fila.pop(); sx += x; sy += y;
+    for (const [a, b] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      const i = b * GW + a;
+      if (a >= 0 && a < GW && b >= 0 && b < GH && !vis.has(i) && masc[i] === DOURADA) { vis.add(i); fila.push([a, b]); }
+    }
+  }
+  const cx = sx / vis.size, cy = sy / vis.size;
+  if (pegas.some(q => Math.hypot(q.x - cx, q.y - cy) < S * .6)) return;
+  pegas.push({x: cx, y: cy, t: 0}); est.douradas++;
+}
+function gatilhos(S, hw) {                         // o que o corpo do Bê toca
+  for (let y = Math.floor(P.y) - S + 1; y < Math.floor(P.y); y++)
+    for (let x = Math.floor(P.x - hw); x <= Math.floor(P.x + hw); x++) {
+      const t = tipo(x, y);
+      if (t === PERIGO && est.invul <= 0) { est.mortes++; renasce(); return; }
+      if (t === DOURADA) pegaDourada(x, y);
+      if (t === CHEGADA) est.chegou = true;
+    }
+}
+
+// ---------- portão QR: Bê só aparece depois que a câmera lê o QR da parede ----------
+const qcan = novo(QW, QH), qcx = qcan.getContext('2d', {willReadFrequently: true});
+let leitor = null, lendo = false, tQR = -1;
+async function carregaLeitor() {
+  if ('BarcodeDetector' in window && (await BarcodeDetector.getSupportedFormats()).includes('qr_code')) {
+    const bd = new BarcodeDetector({formats: ['qr_code']});
+    return async c => { const r = (await bd.detect(c))[0]; return r && {dado: r.rawValue, pts: r.cornerPoints}; };
+  }
+  const jsQR = (await import('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/+esm')).default;
+  return async c => {
+    const r = jsQR(qcx.getImageData(0, 0, c.width, c.height).data, c.width, c.height, {inversionAttempts: 'dontInvert'});
+    return r && {dado: r.data, pts: [r.location.topLeftCorner, r.location.topRightCorner, r.location.bottomRightCorner, r.location.bottomLeftCorner]};
+  };
+}
+async function leQR(t) {
+  if (!leitor || lendo || t - tQR < .3) return;
+  lendo = true; tQR = t;
+  let sc = 1, ox = 0, oy = 0;                      // px do leitor -> px do quadro
+  if (fonte === 'cam' && video && video.readyState >= 2) {   // lê na resolução cheia do vídeo: QR pequeno ainda decodifica
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (qcan.width !== vw) { qcan.width = vw; qcan.height = vh; }
+    qcx.drawImage(video, 0, 0); sc = Math.max(QW / vw, QH / vh); ox = (QW - vw * sc) / 2; oy = (QH - vh * sc) / 2;
+  } else { if (qcan.width !== QW) { qcan.width = QW; qcan.height = QH; } qcx.drawImage(quadro, 0, 0); }
+  const a0 = {x: acum.x, y: acum.y};
+  try {
+    const r = await leitor(qcan);
+    if (r && /visao-viva|jornada/i.test(r.dado)) {   // o celular andou durante a leitura: soma o fluxo desse meio-tempo
+      const gx = r.pts.map(p => (p.x * sc + ox) * GW / QW + acum.x - a0.x), gy = r.pts.map(p => (p.y * sc + oy) * GH / QH + acum.y - a0.y);
+      achouQR({x0: Math.min(...gx), x1: Math.max(...gx), y0: Math.min(...gy), y1: Math.max(...gy), dado: r.dado});
+    }
+  } catch (err) { console.warn('QR', err); }
+  lendo = false;
+}
+function achouQR(c) {
+  if (!QRA.ok) {                                   // primeira leitura: Bê nasce em cima do QR
+    Object.assign(QRA, c, {ok: true});
+    Object.assign(P, {x: (c.x0 + c.x1) / 2, y: c.y0 - 1, vx: 0, vy: 0, chao: false});
+    Object.assign(salvo, {x: P.x, y: c.y0, ok: true});
+    est.ativo = true; est.invul = .6;
+    return;
+  }
+  const dx = (c.x0 + c.x1) / 2 - (QRA.x0 + QRA.x1) / 2, dy = (c.y0 + c.y1) / 2 - (QRA.y0 + QRA.y1) / 2;
+  P.x += dx; P.y += dy; salvo.x += dx; salvo.y += dy;   // releitura: o QR é a âncora verdadeira, zera a deriva do fluxo
+  for (const q of pegas) { q.x += dx; q.y += dy; }
+  Object.assign(QRA, c);
+  est.reancora = Math.hypot(dx, dy);
+}
+
+function fisica(dt) {
+  const S = +$('tam').value, F = MAPA.fisica, u = S / MAPA.personagem.hitbox.h, hw = Math.max(1, S * .18), degrau = Math.ceil(S * .3);
+  if ($('exigeQR').checked && !est.ativo) return;   // sem QR lido, Bê ainda não existe
+  est.fora = P.x < 0 || P.x >= GW || P.y < 1 || P.y >= GH;
+  if (est.fora) { P.vx = P.vy = 0; return; }       // a câmera saiu de cima dele: Bê espera onde está no mundo
+  const dir = (teclas.d ? 1 : 0) - (teclas.e ? 1 : 0);
+  P.vx = dir * F.corrida * u; if (dir) P.olha = dir;
+  if (P.vx) {
+    const nx = P.x + P.vx * dt, borda = nx + Math.sign(P.vx) * hw;
+    let bloq = false;
+    for (let y = Math.floor(P.y) - S; y < Math.floor(P.y) - degrau; y++) if (sol(borda, y)) { bloq = true; break; }
+    if (!bloq) {
+      P.x = nx;
+      if (P.chao) for (let k = 0; k < degrau && linha(Math.floor(P.y) - 1, P.x - hw, P.x + hw); k++) P.y -= 1;
+    }
+  }
+  P.coy = P.chao ? F.coyote : P.coy - dt;
+  if (teclas.pulo && !teclas.usado && P.coy > 0) { P.vy = -F.pulo * u; P.chao = false; P.coy = 0; teclas.usado = true; P.cortou = false; }
+  if (!teclas.pulo && P.vy < 0 && !P.cortou) { P.vy *= F.cortePulo; P.cortou = true; }
+  P.vy = Math.min(P.vy + F.gravidade * u * dt, F.quedaMax * u);
+  const ny = P.y + P.vy * dt, eraChao = P.chao;
+  P.chao = false;
+  if (P.vy >= 0) {
+    for (let r = Math.floor(P.y); r <= Math.floor(ny + (eraChao ? .6 : 0)); r++)
+      if (linha(r, P.x - hw, P.x + hw)) { P.y = r; P.vy = 0; P.chao = true; break; }
+    if (!P.chao) P.y = ny;
+    for (let k = 0; k < S && linha(Math.floor(P.y) - 1, P.x - hw, P.x + hw); k++) { P.y = Math.floor(P.y) - 1; P.chao = true; P.vy = 0; }  // objeto subiu (mão levantando)
+  } else P.y = ny;
+  if (P.chao && !eraChao) P.pouso = .15;
+  P.pouso -= dt;
+  if (P.chao && pisaChao(Math.floor(P.y), P.x - hw, P.x + hw)) { salvo.x = P.x - P.olha * S * .6; salvo.y = P.y; salvo.ok = true; }  // na mão não salva: ela some
+  est.invul -= dt;
+  gatilhos(S, hw);
+  if (P.y >= GH) { est.quedas++; renasce(); }     // caiu pela borda de baixo por conta própria = queda
+  const a = !P.chao ? (P.vy < 0 ? 'jump' : 'fall') : P.vx ? 'run' : P.pouso > 0 ? 'land' : 'idle';
+  if (P.anim !== a) { P.anim = a; P.q = 0; P.tq = 0; }
+  const an2 = ATLAS.animations[P.anim];
+  P.tq += dt;
+  while (P.tq >= 1 / an2.fps) { P.tq -= 1 / an2.fps; P.q = an2.loop ? (P.q + 1) % an2.frames.length : Math.min(P.q + 1, an2.frames.length - 1); }
+}
+
+// ---------- desenho ----------
+let vista = {k: 1, ox: 0, oy: 0};
+function desenha() {
+  const W = tela.width = innerWidth * devicePixelRatio, H = tela.height = innerHeight * devicePixelRatio;
+  const k = Math.max(W / QW, H / QH), ox = (W - QW * k) / 2, oy = (H - QH * k) / 2;
+  vista = {k, ox, oy};
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(quadro, ox, oy, QW * k, QH * k);
+  if ($('verMasc').checked) {
+    const m = mimg.data;
+    for (let i = 0; i < N; i++) {
+      const c = COR_TIPO[masc[i]];
+      if (c) { m[i * 4] = c[0]; m[i * 4 + 1] = c[1]; m[i * 4 + 2] = c[2]; m[i * 4 + 3] = 120; } else m[i * 4 + 3] = 0;
+    }
+    mctx.putImageData(mimg, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(mcan, ox, oy, QW * k, QH * k);
+  }
+  const cel = k * QW / GW, S = +$('tam').value, e = S * cel / MAPA.personagem.hitbox.h;
+  const espera = $('exigeQR').checked && !est.ativo;
+  ctx.lineWidth = 3 * devicePixelRatio; ctx.strokeStyle = '#fff';
+  for (const q of pegas) {                          // dourada já coletada: anel branco por cima da mancha impressa
+    ctx.beginPath(); ctx.arc(ox + q.x * cel, oy + q.y * cel, S * cel * .35, 0, 7); ctx.stroke();
+  }
+  if (est.fora && !espera) {                        // seta na borda apontando onde o Bê ficou
+    const bx = Math.max(.04, Math.min(.96, P.x / GW)) * QW * k + ox, by = Math.max(.06, Math.min(.94, (P.y - S / 2) / GH)) * QH * k + oy;
+    const ang = Math.atan2(oy + (P.y - S / 2) * cel - by, ox + P.x * cel - bx), r = 18 * devicePixelRatio;
+    ctx.fillStyle = '#F2C230'; ctx.beginPath();
+    ctx.moveTo(bx + Math.cos(ang) * r, by + Math.sin(ang) * r);
+    ctx.lineTo(bx + Math.cos(ang + 2.5) * r, by + Math.sin(ang + 2.5) * r);
+    ctx.lineTo(bx + Math.cos(ang - 2.5) * r, by + Math.sin(ang - 2.5) * r); ctx.fill();
+  }
+
+  if (espera) {                                    // mira: convida a apontar para o QR
+    const m = Math.min(W, H) * .42, x = (W - m) / 2, y = (H - m) / 2, l = m * .18;
+    ctx.strokeStyle = '#F2C230'; ctx.lineWidth = 5 * devicePixelRatio; ctx.beginPath();
+    for (const [cx, cy, sx, sy] of [[x, y, 1, 1], [x + m, y, -1, 1], [x, y + m, 1, -1], [x + m, y + m, -1, -1]]) { ctx.moveTo(cx + sx * l, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * l); }
+    ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = `bold ${20 * devicePixelRatio}px system-ui`; ctx.textAlign = 'center';
+    ctx.fillText(leitor ? 'Aponte para o QR da parede' : 'carregando leitor de QR…', W / 2, y + m + 34 * devicePixelRatio); ctx.textAlign = 'start';
+  } else if (QRA.ok && $('verMasc').checked) { ctx.strokeStyle = '#2BA84A'; ctx.lineWidth = 2 * devicePixelRatio; ctx.strokeRect(ox + QRA.x0 * cel, oy + QRA.y0 * cel, (QRA.x1 - QRA.x0) * cel, (QRA.y1 - QRA.y0) * cel); }
+  if (est.chegou) { ctx.fillStyle = '#2BA84A'; ctx.font = `bold ${40 * devicePixelRatio}px system-ui`; ctx.textAlign = 'center'; ctx.fillText('CHEGOU!', W / 2, H * .2); ctx.textAlign = 'start'; }
+  const fr = ATLAS.animations[P.anim].frames[P.q];
+  ctx.imageSmoothingEnabled = false;
+  ctx.save();
+  if (espera) ctx.globalAlpha = 0;
+  if (est.invul > 0 && (est.invul * 10 | 0) % 2) ctx.globalAlpha = .25;   // pisca ao renascer
+  ctx.translate(ox + P.x * cel, oy + P.y * cel);
+  ctx.scale(P.olha * e, e);
+  ctx.drawImage(sprite, fr.x, fr.y, fr.w, fr.h, -ATLAS.anchor.x, -ATLAS.anchor.y, fr.w, fr.h);
+  ctx.restore();
+  $('info').textContent =
+    `fps ${est.fps.toFixed(0)}  quedas ${est.quedas}  mortes ${est.mortes}\n` +
+    `${est.ativo ? 'QR ok' : 'sem QR'}${est.reancora != null ? ` (reâncora ${est.reancora.toFixed(1)})` : ''}  douradas ${est.douradas}${est.chegou ? '  CHEGOU' : ''}${corpoModo === 'ia' ? `  mãos ${maoPts.length}` : ''}\n` +
+    `celular ${est.fx.toFixed(2)},${est.fy.toFixed(2)}` +
+    (fonte === 'teste' ? `  real ${est.rx.toFixed(2)},${est.ry.toFixed(2)}\nerro médio ${(est.erro / Math.max(1, est.nErro)).toFixed(3)} cél` : '');
+}
+
+// ---------- laço ----------
+function passo(dt, t) { leQR(t); capturaQuadro(t); analisa(); fisica(dt); desenha(); }
+let tAnt = performance.now();
+function laco(now) {
+  const dt = Math.min(.05, (now - tAnt) / 1000); tAnt = now;
+  est.fps = est.fps * .9 + (dt > 0 ? .1 / dt : 0);
+  passo(dt, now / 1000);
+  requestAnimationFrame(laco);
+}
+
+// ---------- entrada ----------
+function grade(cx, cy) {
+  const d = devicePixelRatio;
+  return {x: (cx * d - vista.ox) / vista.k * GW / QW, y: (cy * d - vista.oy) / vista.k * GH / QH};
+}
+let arr = null;
+tela.onpointerdown = e => { arr = {x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, mov: false}; tela.setPointerCapture(e.pointerId); };
+tela.onpointermove = e => {
+  if (!arr) return;
+  const dx = e.clientX - arr.x, dy = e.clientY - arr.y;
+  if (Math.hypot(dx, dy) > 6) arr.mov = true;
+  if (arr.mov && fonte === 'teste') { const f = VW / (QW * vista.k / devicePixelRatio); cam.x = arr.cx - dx * f; cam.y = arr.cy - dy * f; }
+};
+tela.onpointerup = e => {
+  if (arr && !arr.mov) {
+    const g = grade(e.clientX, e.clientY);
+    if (amostrando) {
+      const q = qctx.getImageData(g.x * QW / GW | 0, g.y * QH / GH | 0, 1, 1).data;
+      chave = [q[0], q[1], q[2]]; amostrando = false; $('modo').value = 'cor';
+      $('amostra').textContent = `cor-chave rgb(${chave.join(',')})`;
+    } else if (est.ativo || !$('exigeQR').checked) { Object.assign(P, {x: g.x, y: g.y, vx: 0, vy: 0, chao: false}); est.chegou = false; }
+  }
+  arr = null;
+};
+$('hud').querySelector('b').onclick = () => $('hud').classList.toggle('min');
+$('amostra').onclick = () => { amostrando = true; $('amostra').textContent = 'toque na plataforma…'; };
+const mapa = {ArrowLeft: 'e', KeyA: 'e', ArrowRight: 'd', KeyD: 'd', Space: 'pulo', ArrowUp: 'pulo', KeyW: 'pulo'};
+addEventListener('keydown', e => { const t = mapa[e.code]; if (t) { teclas[t] = true; e.preventDefault(); } });
+addEventListener('keyup', e => { const t = mapa[e.code]; if (t) { teclas[t] = false; if (t === 'pulo') teclas.usado = false; } });
+for (const [id, t] of [['bE', 'e'], ['bD', 'd'], ['bP', 'pulo']]) {
+  const b = $(id);
+  b.onpointerdown = e => { teclas[t] = true; b.setPointerCapture(e.pointerId); };
+  b.onpointerup = b.onpointercancel = () => { teclas[t] = false; if (t === 'pulo') teclas.usado = false; };
+}
+$('vao').oninput = $('mao').onchange = () => desenhaCena();
+$('corpo').onchange = async () => {
+  corpoModo = $('corpo').value; maoPts = [];
+  if (corpoModo === 'ia' && !maoIA) {
+    $('info').textContent = 'carregando mão por IA…';
+    try { await carregaMaoIA(); } catch (err) { alert('IA da mão falhou: ' + err.message); corpoModo = 'pele'; $('corpo').value = 'pele'; }
+  }
+};
+$('fonte').onchange = async () => {
+  fonte = $('fonte').value; temAnterior = false;
+  document.body.classList.toggle('cam', fonte === 'cam');
+  if (fonte === 'cam' && !video) {
+    try {
+      const st = await navigator.mediaDevices.getUserMedia({video: {facingMode: {ideal: 'environment'}, width: {ideal: 1280}, height: {ideal: 720}}, audio: false});
+      video = Object.assign(document.createElement('video'), {playsInline: true, muted: true, srcObject: st});
+      await video.play();
+    } catch (err) { alert('Câmera indisponível: ' + err.message + '\n(no celular precisa de https)'); }
+  }
+};
+
+Promise.all([
+  fetch('be-atlas.json').then(r => r.json()),
+  fetch('jornada-mapa.json').then(r => r.json()),
+  sprite.decode(),
+  qrImg.decode().catch(() => {}),
+]).then(([a, m]) => {
+  ATLAS = a; MAPA = m;
+  desenhaCena();
+  window.__J = {P, cam, est, QRA, salvo, achouQR, prontoQR: () => !!leitor, teclas, masc, pegas, passo, desenhaCena, GW, GH};
+  const q = new URLSearchParams(location.search);
+  if (q.has('semqr')) $('exigeQR').checked = false;
+  carregaLeitor().then(f => leitor = f, err => { $('exigeQR').checked = false; alert('Leitor de QR indisponível (' + err.message + '): Bê nasce pelo toque.'); });
+  if (q.has('cam')) { $('fonte').value = 'cam'; $('fonte').onchange(); $('hud').classList.add('min'); }
+  if (!q.has('pausa')) requestAnimationFrame(laco);
+});
+</script>
+</body>
+</html>

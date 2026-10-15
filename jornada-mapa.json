@@ -1,0 +1,1268 @@
+{
+ "versao": 1,
+ "nome": "Jornada pelo Village",
+ "folha": {
+  "w": 424,
+  "h": 300,
+  "chaoBorda": 252,
+  "papel": "A3 paisagem (serve A4)",
+  "escalaImpressao": {
+   "A3": 11,
+   "A4": 7
+  }
+ },
+ "fisica": {
+  "gravidade": 506,
+  "pulo": 230,
+  "corrida": 45,
+  "cortePulo": 0.45,
+  "coyote": 0.08,
+  "quedaMax": 360,
+  "nota": "px/s na escala da folha; pulo ~52 px de altura, ~41 px de alcance no plano"
+ },
+ "personagem": {
+  "spritesheet": "be-spritesheet.png",
+  "atlas": "be-atlas.json",
+  "escala": 1,
+  "hitbox": {
+   "w": 14,
+   "h": 40
+  }
+ },
+ "coletavelSprite": {
+  "imagem": "folha-dourada.png",
+  "w": 12,
+  "h": 12,
+  "pivo": "centro",
+  "animacoes": {
+   "brilho": {
+    "quadros": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "fps": 8,
+    "loop": true
+   },
+   "coleta": {
+    "quadros": [
+     4,
+     5,
+     6,
+     7
+    ],
+    "fps": 16,
+    "loop": false
+   }
+  }
+ },
+ "chegada": {
+  "folha": 12,
+  "texto": "ESQUENTA BLACK",
+  "abreCom": 24,
+  "x": 340,
+  "y": 204,
+  "w": 56,
+  "h": 48
+ },
+ "totalDouradas": 36,
+ "mindar": {
+  "arquivo": "jornada-alvos.mind",
+  "maxTrack": 1,
+  "alvoPorFolha": "índice = n - 1"
+ },
+ "folhas": [
+  {
+   "n": 1,
+   "id": "folha-01",
+   "lugar": "PORTARIA",
+   "periodo": "dia",
+   "ceu": {
+    "topo": "#3F8FD8",
+    "horizonte": "#BDE6FA"
+   },
+   "imagem": "folhas/folha-01.png",
+   "alvoMindar": 0,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "marquise",
+     "tipo": "telhado",
+     "x": 196,
+     "y": 200,
+     "w": 80,
+     "h": 6,
+     "umSentido": true
+    },
+    {
+     "id": "canteiro",
+     "tipo": "canteiro",
+     "x": 120,
+     "y": 236,
+     "w": 30,
+     "h": 64,
+     "umSentido": false
+    },
+    {
+     "id": "mureta",
+     "tipo": "muro",
+     "x": 330,
+     "y": 228,
+     "w": 22,
+     "h": 72,
+     "umSentido": false
+    },
+    {
+     "id": "chao",
+     "tipo": "chao",
+     "x": 0,
+     "y": 252,
+     "w": 424,
+     "h": 48,
+     "umSentido": false
+    }
+   ],
+   "zonasMorte": [],
+   "douradas": [
+    {
+     "id": "f01-1",
+     "x": 135,
+     "y": 218
+    },
+    {
+     "id": "f01-2",
+     "x": 236,
+     "y": 182
+    },
+    {
+     "id": "f01-3",
+     "x": 300,
+     "y": 232
+    }
+   ],
+   "areas": {
+    "logo": {
+     "x": 8,
+     "y": 8,
+     "w": 64,
+     "h": 32
+    },
+    "qr": {
+     "x": 368,
+     "y": 8,
+     "w": 48,
+     "h": 48
+    }
+   }
+  },
+  {
+   "n": 2,
+   "id": "folha-02",
+   "lugar": "PRAÇA TIRADENTES",
+   "periodo": "dia",
+   "ceu": {
+    "topo": "#3F8FD8",
+    "horizonte": "#BDE6FA"
+   },
+   "imagem": "folhas/folha-02.png",
+   "alvoMindar": 1,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "canteiro",
+     "tipo": "canteiro",
+     "x": 150,
+     "y": 228,
+     "w": 36,
+     "h": 72,
+     "umSentido": false
+    },
+    {
+     "id": "placa-aventura",
+     "tipo": "placa",
+     "x": 172,
+     "y": 178,
+     "w": 40,
+     "h": 9,
+     "umSentido": true
+    },
+    {
+     "id": "placa-saude",
+     "tipo": "placa",
+     "x": 218,
+     "y": 202,
+     "w": 40,
+     "h": 9,
+     "umSentido": true
+    },
+    {
+     "id": "banco",
+     "tipo": "banco",
+     "x": 300,
+     "y": 236,
+     "w": 30,
+     "h": 64,
+     "umSentido": false
+    },
+    {
+     "id": "chao",
+     "tipo": "chao",
+     "x": 0,
+     "y": 252,
+     "w": 424,
+     "h": 48,
+     "umSentido": false
+    }
+   ],
+   "zonasMorte": [],
+   "douradas": [
+    {
+     "id": "f02-1",
+     "x": 168,
+     "y": 210
+    },
+    {
+     "id": "f02-2",
+     "x": 192,
+     "y": 160
+    },
+    {
+     "id": "f02-3",
+     "x": 316,
+     "y": 220
+    }
+   ],
+   "areas": {}
+  },
+  {
+   "n": 3,
+   "id": "folha-03",
+   "lugar": "SORVETERIA",
+   "periodo": "dia",
+   "ceu": {
+    "topo": "#3F8FD8",
+    "horizonte": "#BDE6FA"
+   },
+   "imagem": "folhas/folha-03.png",
+   "alvoMindar": 2,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "toldo",
+     "tipo": "toldo",
+     "x": 230,
+     "y": 180,
+     "w": 90,
+     "h": 8,
+     "umSentido": true
+    },
+    {
+     "id": "balcao",
+     "tipo": "balcao",
+     "x": 150,
+     "y": 220,
+     "w": 90,
+     "h": 80,
+     "umSentido": false
+    },
+    {
+     "id": "banco-pedra",
+     "tipo": "banco",
+     "x": 340,
+     "y": 234,
+     "w": 40,
+     "h": 66,
+     "umSentido": false
+    },
+    {
+     "id": "chao",
+     "tipo": "chao",
+     "x": 0,
+     "y": 252,
+     "w": 424,
+     "h": 48,
+     "umSentido": false
+    }
+   ],
+   "zonasMorte": [],
+   "douradas": [
+    {
+     "id": "f03-1",
+     "x": 180,
+     "y": 200
+    },
+    {
+     "id": "f03-2",
+     "x": 290,
+     "y": 160
+    },
+    {
+     "id": "f03-3",
+     "x": 360,
+     "y": 216
+    }
+   ],
+   "areas": {}
+  },
+  {
+   "n": 4,
+   "id": "folha-04",
+   "lugar": "PARQUINHO",
+   "periodo": "dia",
+   "ceu": {
+    "topo": "#3F8FD8",
+    "horizonte": "#BDE6FA"
+   },
+   "imagem": "folhas/folha-04.png",
+   "alvoMindar": 3,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "torre-1",
+     "tipo": "torre",
+     "x": 96,
+     "y": 210,
+     "w": 44,
+     "h": 6,
+     "umSentido": true
+    },
+    {
+     "id": "ponte",
+     "tipo": "ponte",
+     "x": 140,
+     "y": 210,
+     "w": 60,
+     "h": 3,
+     "umSentido": true
+    },
+    {
+     "id": "torre-2",
+     "tipo": "torre",
+     "x": 200,
+     "y": 188,
+     "w": 44,
+     "h": 6,
+     "umSentido": true
+    },
+    {
+     "id": "brinquedo",
+     "tipo": "brinquedo",
+     "x": 330,
+     "y": 228,
+     "w": 34,
+     "h": 72,
+     "umSentido": false
+    },
+    {
+     "id": "chao",
+     "tipo": "chao",
+     "x": 0,
+     "y": 252,
+     "w": 424,
+     "h": 48,
+     "umSentido": false
+    }
+   ],
+   "zonasMorte": [],
+   "douradas": [
+    {
+     "id": "f04-1",
+     "x": 118,
+     "y": 192
+    },
+    {
+     "id": "f04-2",
+     "x": 222,
+     "y": 168
+    },
+    {
+     "id": "f04-3",
+     "x": 346,
+     "y": 208
+    }
+   ],
+   "areas": {}
+  },
+  {
+   "n": 5,
+   "id": "folha-05",
+   "lugar": "PISCINAS",
+   "periodo": "tarde",
+   "ceu": {
+    "topo": "#3F8FD8",
+    "horizonte": "#FDB84B"
+   },
+   "imagem": "folhas/folha-05.png",
+   "alvoMindar": 4,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "borda-esq",
+     "tipo": "borda",
+     "x": 0,
+     "y": 252,
+     "w": 86,
+     "h": 48,
+     "umSentido": false
+    },
+    {
+     "id": "boia-1",
+     "tipo": "boia",
+     "x": 124,
+     "y": 244,
+     "w": 30,
+     "h": 6,
+     "umSentido": true
+    },
+    {
+     "id": "boia-2",
+     "tipo": "boia",
+     "x": 192,
+     "y": 240,
+     "w": 30,
+     "h": 6,
+     "umSentido": true
+    },
+    {
+     "id": "ofuro",
+     "tipo": "ofuro",
+     "x": 258,
+     "y": 236,
+     "w": 42,
+     "h": 64,
+     "umSentido": false
+    },
+    {
+     "id": "borda-dir",
+     "tipo": "borda",
+     "x": 334,
+     "y": 252,
+     "w": 90,
+     "h": 48,
+     "umSentido": false
+    }
+   ],
+   "zonasMorte": [
+    {
+     "x": 86,
+     "y": 262,
+     "w": 248,
+     "h": 68
+    }
+   ],
+   "douradas": [
+    {
+     "id": "f05-1",
+     "x": 139,
+     "y": 226
+    },
+    {
+     "id": "f05-2",
+     "x": 207,
+     "y": 220
+    },
+    {
+     "id": "f05-3",
+     "x": 279,
+     "y": 216
+    }
+   ],
+   "areas": {}
+  },
+  {
+   "n": 6,
+   "id": "folha-06",
+   "lugar": "KART E UTV",
+   "periodo": "tarde",
+   "ceu": {
+    "topo": "#3E6189",
+    "horizonte": "#D9892E"
+   },
+   "imagem": "folhas/folha-06.png",
+   "alvoMindar": 5,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "pneus-1",
+     "tipo": "pneus",
+     "x": 96,
+     "y": 230,
+     "w": 28,
+     "h": 70,
+     "umSentido": false
+    },
+    {
+     "id": "pneus-2",
+     "tipo": "pneus",
+     "x": 160,
+     "y": 208,
+     "w": 28,
+     "h": 92,
+     "umSentido": false
+    },
+    {
+     "id": "buggy",
+     "tipo": "buggy",
+     "x": 232,
+     "y": 228,
+     "w": 52,
+     "h": 72,
+     "umSentido": false
+    },
+    {
+     "id": "pista-1",
+     "tipo": "chao",
+     "x": 0,
+     "y": 252,
+     "w": 300,
+     "h": 48,
+     "umSentido": false
+    },
+    {
+     "id": "pista-2",
+     "tipo": "chao",
+     "x": 336,
+     "y": 252,
+     "w": 88,
+     "h": 48,
+     "umSentido": false
+    }
+   ],
+   "zonasMorte": [
+    {
+     "x": 300,
+     "y": 262,
+     "w": 36,
+     "h": 68
+    }
+   ],
+   "douradas": [
+    {
+     "id": "f06-1",
+     "x": 110,
+     "y": 212
+    },
+    {
+     "id": "f06-2",
+     "x": 174,
+     "y": 190
+    },
+    {
+     "id": "f06-3",
+     "x": 318,
+     "y": 226
+    }
+   ],
+   "areas": {}
+  },
+  {
+   "n": 7,
+   "id": "folha-07",
+   "lugar": "TRILHA ADVENTURE",
+   "periodo": "tarde",
+   "ceu": {
+    "topo": "#2E1F3D",
+    "horizonte": "#E8732C"
+   },
+   "imagem": "folhas/folha-07.png",
+   "alvoMindar": 6,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "arvorismo",
+     "tipo": "deck",
+     "x": 196,
+     "y": 206,
+     "w": 40,
+     "h": 6,
+     "umSentido": true
+    },
+    {
+     "id": "borda-esq",
+     "tipo": "chao",
+     "x": 0,
+     "y": 252,
+     "w": 60,
+     "h": 48,
+     "umSentido": false
+    },
+    {
+     "id": "borda-dir",
+     "tipo": "chao",
+     "x": 364,
+     "y": 252,
+     "w": 60,
+     "h": 48,
+     "umSentido": false
+    },
+    {
+     "id": "ponte-60",
+     "tipo": "ponte",
+     "x": 60,
+     "y": 248,
+     "w": 90,
+     "h": 3,
+     "umSentido": true
+    },
+    {
+     "id": "ponte-170",
+     "tipo": "ponte",
+     "x": 170,
+     "y": 254,
+     "w": 80,
+     "h": 3,
+     "umSentido": true
+    },
+    {
+     "id": "ponte-270",
+     "tipo": "ponte",
+     "x": 270,
+     "y": 248,
+     "w": 94,
+     "h": 3,
+     "umSentido": true
+    }
+   ],
+   "zonasMorte": [
+    {
+     "x": 60,
+     "y": 266,
+     "w": 304,
+     "h": 64
+    }
+   ],
+   "douradas": [
+    {
+     "id": "f07-1",
+     "x": 160,
+     "y": 226
+    },
+    {
+     "id": "f07-2",
+     "x": 216,
+     "y": 186
+    },
+    {
+     "id": "f07-3",
+     "x": 260,
+     "y": 232
+    }
+   ],
+   "areas": {}
+  },
+  {
+   "n": 8,
+   "id": "folha-08",
+   "lugar": "FAZENDINHA",
+   "periodo": "tarde",
+   "ceu": {
+    "topo": "#4A2540",
+    "horizonte": "#FDB84B"
+   },
+   "imagem": "folhas/folha-08.png",
+   "alvoMindar": 7,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "telhado-baia",
+     "tipo": "telhado",
+     "x": 196,
+     "y": 184,
+     "w": 104,
+     "h": 8,
+     "umSentido": true
+    },
+    {
+     "id": "cerca",
+     "tipo": "cerca",
+     "x": 80,
+     "y": 220,
+     "w": 90,
+     "h": 4,
+     "umSentido": true
+    },
+    {
+     "id": "terra-1",
+     "tipo": "chao",
+     "x": 0,
+     "y": 252,
+     "w": 330,
+     "h": 48,
+     "umSentido": false
+    },
+    {
+     "id": "terra-2",
+     "tipo": "chao",
+     "x": 360,
+     "y": 252,
+     "w": 64,
+     "h": 48,
+     "umSentido": false
+    }
+   ],
+   "zonasMorte": [
+    {
+     "x": 330,
+     "y": 262,
+     "w": 30,
+     "h": 68
+    }
+   ],
+   "douradas": [
+    {
+     "id": "f08-1",
+     "x": 125,
+     "y": 202
+    },
+    {
+     "id": "f08-2",
+     "x": 250,
+     "y": 166
+    },
+    {
+     "id": "f08-3",
+     "x": 345,
+     "y": 230
+    }
+   ],
+   "areas": {}
+  },
+  {
+   "n": 9,
+   "id": "folha-09",
+   "lugar": "LAGO",
+   "periodo": "tarde",
+   "ceu": {
+    "topo": "#241A33",
+    "horizonte": "#E8732C"
+   },
+   "imagem": "folhas/folha-09.png",
+   "alvoMindar": 8,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "margem-esq",
+     "tipo": "chao",
+     "x": 0,
+     "y": 252,
+     "w": 58,
+     "h": 48,
+     "umSentido": false
+    },
+    {
+     "id": "margem-dir",
+     "tipo": "chao",
+     "x": 372,
+     "y": 252,
+     "w": 52,
+     "h": 48,
+     "umSentido": false
+    },
+    {
+     "id": "cisne",
+     "tipo": "pedalinho",
+     "x": 90,
+     "y": 240,
+     "w": 40,
+     "h": 6,
+     "umSentido": true
+    },
+    {
+     "id": "jacare",
+     "tipo": "pedalinho",
+     "x": 168,
+     "y": 244,
+     "w": 46,
+     "h": 6,
+     "umSentido": true
+    },
+    {
+     "id": "trampolim",
+     "tipo": "trampolim",
+     "x": 252,
+     "y": 246,
+     "w": 38,
+     "h": 6,
+     "umSentido": true,
+     "quique": 1.45
+    },
+    {
+     "id": "caiaque",
+     "tipo": "caiaque",
+     "x": 318,
+     "y": 248,
+     "w": 36,
+     "h": 5,
+     "umSentido": true
+    }
+   ],
+   "zonasMorte": [
+    {
+     "x": 58,
+     "y": 262,
+     "w": 314,
+     "h": 68
+    }
+   ],
+   "douradas": [
+    {
+     "id": "f09-1",
+     "x": 110,
+     "y": 222
+    },
+    {
+     "id": "f09-2",
+     "x": 191,
+     "y": 226
+    },
+    {
+     "id": "f09-3",
+     "x": 271,
+     "y": 170
+    }
+   ],
+   "areas": {}
+  },
+  {
+   "n": 10,
+   "id": "folha-10",
+   "lugar": "PLATAFORMA AQUÁTICA",
+   "periodo": "noite",
+   "ceu": {
+    "topo": "#0D0A12",
+    "horizonte": "#5E1F2B"
+   },
+   "imagem": "folhas/folha-10.png",
+   "alvoMindar": 9,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "margem-esq",
+     "tipo": "chao",
+     "x": 0,
+     "y": 252,
+     "w": 44,
+     "h": 48,
+     "umSentido": false
+    },
+    {
+     "id": "margem-dir",
+     "tipo": "chao",
+     "x": 380,
+     "y": 252,
+     "w": 44,
+     "h": 48,
+     "umSentido": false
+    },
+    {
+     "id": "esteira-1",
+     "tipo": "esteira",
+     "x": 56,
+     "y": 246,
+     "w": 40,
+     "h": 6,
+     "umSentido": true,
+     "balanco": {
+      "amp": 1.5,
+      "periodo": 2.2,
+      "fase": 0.0
+     }
+    },
+    {
+     "id": "esteira-2",
+     "tipo": "esteira",
+     "x": 112,
+     "y": 238,
+     "w": 38,
+     "h": 6,
+     "umSentido": true,
+     "balanco": {
+      "amp": 1.5,
+      "periodo": 2.55,
+      "fase": 1.1
+     }
+    },
+    {
+     "id": "esteira-3",
+     "tipo": "esteira",
+     "x": 166,
+     "y": 230,
+     "w": 38,
+     "h": 6,
+     "umSentido": true,
+     "balanco": {
+      "amp": 1.5,
+      "periodo": 2.9,
+      "fase": 2.2
+     }
+    },
+    {
+     "id": "esteira-4",
+     "tipo": "esteira",
+     "x": 222,
+     "y": 238,
+     "w": 40,
+     "h": 6,
+     "umSentido": true,
+     "balanco": {
+      "amp": 1.5,
+      "periodo": 3.25,
+      "fase": 3.3
+     }
+    },
+    {
+     "id": "esteira-5",
+     "tipo": "esteira",
+     "x": 278,
+     "y": 230,
+     "w": 38,
+     "h": 6,
+     "umSentido": true,
+     "balanco": {
+      "amp": 1.5,
+      "periodo": 3.6,
+      "fase": 4.4
+     }
+    },
+    {
+     "id": "esteira-6",
+     "tipo": "esteira",
+     "x": 334,
+     "y": 242,
+     "w": 36,
+     "h": 6,
+     "umSentido": true,
+     "balanco": {
+      "amp": 1.5,
+      "periodo": 3.95,
+      "fase": 5.5
+     }
+    }
+   ],
+   "zonasMorte": [
+    {
+     "x": 44,
+     "y": 264,
+     "w": 336,
+     "h": 66
+    }
+   ],
+   "douradas": [
+    {
+     "id": "f10-1",
+     "x": 131,
+     "y": 220
+    },
+    {
+     "id": "f10-2",
+     "x": 241,
+     "y": 220
+    },
+    {
+     "id": "f10-3",
+     "x": 297,
+     "y": 212
+    }
+   ],
+   "areas": {}
+  },
+  {
+   "n": 11,
+   "id": "folha-11",
+   "lugar": "PRAIA VILLAGE",
+   "periodo": "noite",
+   "ceu": {
+    "topo": "#0D0A12",
+    "horizonte": "#2E1F3D"
+   },
+   "imagem": "folhas/folha-11.png",
+   "alvoMindar": 10,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "espreguicadeira",
+     "tipo": "cadeira",
+     "x": 92,
+     "y": 236,
+     "w": 26,
+     "h": 64,
+     "umSentido": false
+    },
+    {
+     "id": "guarda-sol",
+     "tipo": "guarda-sol",
+     "x": 112,
+     "y": 196,
+     "w": 40,
+     "h": 4,
+     "umSentido": true
+    },
+    {
+     "id": "rede",
+     "tipo": "rede",
+     "x": 196,
+     "y": 220,
+     "w": 4,
+     "h": 80,
+     "umSentido": false
+    },
+    {
+     "id": "balcao-quiosque",
+     "tipo": "balcao",
+     "x": 300,
+     "y": 226,
+     "w": 40,
+     "h": 74,
+     "umSentido": false
+    },
+    {
+     "id": "telhado-quiosque",
+     "tipo": "telhado",
+     "x": 286,
+     "y": 196,
+     "w": 84,
+     "h": 4,
+     "umSentido": true
+    },
+    {
+     "id": "areia",
+     "tipo": "chao",
+     "x": 0,
+     "y": 252,
+     "w": 424,
+     "h": 48,
+     "umSentido": false
+    }
+   ],
+   "zonasMorte": [],
+   "douradas": [
+    {
+     "id": "f11-1",
+     "x": 132,
+     "y": 178
+    },
+    {
+     "id": "f11-2",
+     "x": 198,
+     "y": 198
+    },
+    {
+     "id": "f11-3",
+     "x": 328,
+     "y": 178
+    }
+   ],
+   "areas": {}
+  },
+  {
+   "n": 12,
+   "id": "folha-12",
+   "lugar": "CHALÉS",
+   "periodo": "noite",
+   "ceu": {
+    "topo": "#0D0A12",
+    "horizonte": "#4A2540"
+   },
+   "imagem": "folhas/folha-12.png",
+   "alvoMindar": 11,
+   "entrada": {
+    "x": 0,
+    "y": 252
+   },
+   "saida": {
+    "x": 424,
+    "y": 252
+   },
+   "spawn": {
+    "x": 16,
+    "y": 252
+   },
+   "plataformas": [
+    {
+     "id": "deck-chale-1",
+     "tipo": "deck",
+     "x": 70,
+     "y": 220,
+     "w": 80,
+     "h": 4,
+     "umSentido": true
+    },
+    {
+     "id": "sacada-chale-2",
+     "tipo": "sacada",
+     "x": 232,
+     "y": 196,
+     "w": 60,
+     "h": 4,
+     "umSentido": true
+    },
+    {
+     "id": "deck-1",
+     "tipo": "chao",
+     "x": 0,
+     "y": 252,
+     "w": 170,
+     "h": 48,
+     "umSentido": false
+    },
+    {
+     "id": "deck-2",
+     "tipo": "chao",
+     "x": 206,
+     "y": 252,
+     "w": 218,
+     "h": 48,
+     "umSentido": false
+    }
+   ],
+   "zonasMorte": [
+    {
+     "x": 170,
+     "y": 262,
+     "w": 36,
+     "h": 68
+    }
+   ],
+   "douradas": [
+    {
+     "id": "f12-1",
+     "x": 110,
+     "y": 200
+    },
+    {
+     "id": "f12-2",
+     "x": 188,
+     "y": 226
+    },
+    {
+     "id": "f12-3",
+     "x": 262,
+     "y": 178
+    }
+   ],
+   "areas": {}
+  }
+ ]
+}
