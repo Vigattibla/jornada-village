@@ -46,7 +46,7 @@ const novo = (w, h) => Object.assign(document.createElement('canvas'), {width: w
 const QS = new URLSearchParams(location.search);
 // o QR traz o mapa (?t=1,6 = lugares do percurso); a placa k (ids 3k..3k+2) só ancora o trecho k na parede
 // ?l=N: local com blocos dourados na parede (1 marcador por bloco, ids base+k); o nível é contínuo e os blocos só localizam
-const LOCAIS = {1: {nome: 'Corredor', t: [1, 2, 3, 4, 5]}}, nL = QS.get('l');
+const LOCAIS = {1: {nome: 'Corredor', t: [13, 14, 15, 16, 17]}}, nL = QS.get('l');
 const LOCAL = LOCAIS[nL] ? {...LOCAIS[nL], base: 100 + 10 * (nL - 1)} : null;
 const BU = BLOCO.mm * 424 / 280 / BLOCO.miolo.s;   // unidades da folha por px do bloco
 const FOLHAS = LOCAL ? LOCAL.t.map(v => v - 1) : (QS.get('t') || '1,6').split(',').map(v => Math.max(1, Math.min(12, v | 0)) - 1).slice(0, 4);
