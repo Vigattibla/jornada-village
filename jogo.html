@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Jornada pelo Village</title>
+<style>
+html,body{margin:0;height:100%;background:#111;color:#eee;font:13px system-ui,sans-serif;overflow:hidden;touch-action:none;user-select:none}
+#tela{position:fixed;inset:0;width:100%;height:100%}
+#hud{position:fixed;left:8px;top:8px;background:#000b;padding:8px 10px;border-radius:8px;max-width:290px}
+#hud label{display:flex;gap:6px;align-items:center;margin:4px 0}
+#hud input[type=range]{flex:1}
+#hud.min label,#hud.min small{display:none}
+#hud b{cursor:pointer}
+#info{display:block;font:11px ui-monospace,monospace;color:#9ec;white-space:pre;margin:4px 0}
+body.cam .t{display:none}
+#ctl{position:fixed;bottom:14px;left:0;right:0;display:flex;justify-content:space-between;padding:0 14px;pointer-events:none}
+#ctl button{pointer-events:auto;width:72px;height:72px;border-radius:50%;border:2px solid #fff8;background:#0007;color:#fff;font-size:26px;touch-action:none}
+</style>
+</head>
+<body>
+<canvas id="tela"></canvas>
+<div id="hud">
+  <b>Jornada · marcadores</b>
+  <span id="info"></span>
+  <label>Fonte <select id="fonte"><option value="teste">cena de teste</option><option value="cam">câmera</option></select></label>
+  <label>Mão <select id="corpo"><option value="ia">mão por IA</option><option value="off">desligada</option></select></label>
+  <label><input id="verMasc" type="checkbox" checked> ver colisão</label>
+  <label class="t">Vão real <input id="vao" type="range" min="40" max="280" value="110"></label>
+  <label class="t">Distância <input id="zoom" type="range" min="25" max="150" value="60"></label>
+  <label class="t"><input id="mao" type="checkbox"> mão no vão</label>
+  <label class="t"><input id="balanco" type="checkbox"> balanço do celular</label>
+  <small style="display:block;margin-top:4px">toque = soltar Bê · arrastar = mover celular (teste) · ← → espaço</small>
+</div>
+<div id="ctl"><div><button id="bE">◀</button> <button id="bD">▶</button></div><button id="bP">▲</button></div>
+<script src="vendor/cv.js"></script>
+<script src="vendor/aruco.js"></script>
+<script src="vendor/aruco_4x4_1000.js"></script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const tela = $('tela'), ctx = tela.getContext('2d');
+const novo = (w, h) => Object.assign(document.createElement('canvas'), {width: w, height: h});
+// marcadores ArUco 4x4 no alto de cada folha, em unidades da folha (424×300 = 280×198 mm); lado = quadrado preto
+const MARC = {lado: 84, y: 10, xs: [10, 170, 330], ids: [[0, 1, 2], [3, 4, 5]]};
+const FOLHAS = [0, 5], CHEGADA = {f: 1, x: 380, y: 204, w: 32, h: 48};
+const VAO0 = 150;                                  // vão presumido até a câmera ver as duas folhas juntas
+// mundo = unidades da folha 1; grade de colisão com célula de 2 unidades
+const C = 2, GX0 = -150, GY0 = -150, GW = 650, GH = 300, N = GW * GH;
+const LIVRE = 0, CHAO = 1, CORPO = 2, PERIGO = 3, UM = 4;   // UM = plataforma de um sentido
+const fixo = new Uint8Array(N), masc = new Uint8Array(N);
+const Ts = [{a: 0, x: 0, y: 0, n: 99}, {a: 0, x: 424 + VAO0, y: 0, n: 0}];   // folha -> mundo; n = quadros com as duas juntas
+let rasterTs = null;
+let ATLAS, MAPA, video = null, fonte = 'teste', maoIA = null, maoSegs = [], douradas = [];
+let H = null, Hi = null, tVisto = -9, marcas = [], detMs = 0, nQuadro = 0;
+const sprite = new Image(); sprite.src = 'be-spritesheet.png';
+const P = {x: 0, y: 0, vx: 0, vy: 0, chao: false, coy: 0, cortou: true, olha: 1, anim: 'fall', q: 0, tq: 0, pouso: 0};
+const salvo = {x: 0, y: 0, ok: false};
+const teclas = {e: false, d: false, pulo: false, usado: false};
+const est = {ativo: false, rastreio: false, quedas: 0, mortes: 0, chegou: false, invul: 0, fps: 0, ligado: false, res: 0};
+
+// ---------- álgebra 3×3 ----------
+const m3 = (a, b) => [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => { const r = i / 3 | 0, c = i % 3; return a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c]; });
+function inv3(m) {
+  const [a, b, c, d, e, f, g, h, i] = m, A = e * i - f * h, B = f * g - d * i, K = d * h - e * g, det = a * A + b * B + c * K;
+  return [A, c * h - b * i, b * f - c * e, B, a * i - c * g, c * d - a * f, K, b * g - a * h, a * e - b * d].map(v => v / det);
+}
+const ap = (m, x, y) => { const w = m[6] * x + m[7] * y + m[8]; return {x: (m[0] * x + m[1] * y + m[2]) / w, y: (m[3] * x + m[4] * y + m[5]) / w}; };
+function normaliza(p) {
+  let cx = 0, cy = 0, d = 0;
+  for (const q of p) { cx += q.x; cy += q.y; }
+  cx /= p.length; cy /= p.length;
+  for (const q of p) d += Math.hypot(q.x - cx, q.y - cy);
+  const s = Math.SQRT2 / (d / p.length || 1);
+  return [s, 0, -s * cx, 0, s, -s * cy, 0, 0, 1];
+}
+function resolve(M, v, n) {                        // Gauss com pivô parcial
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r * n + c]) > Math.abs(M[p * n + c])) p = r;
+    if (Math.abs(M[p * n + c]) < 1e-12) return null;
+    if (p !== c) { for (let k = 0; k < n; k++) [M[c * n + k], M[p * n + k]] = [M[p * n + k], M[c * n + k]]; [v[c], v[p]] = [v[p], v[c]]; }
+    for (let r = c + 1; r < n; r++) {
+      const f = M[r * n + c] / M[c * n + c];
+      for (let k = c; k < n; k++) M[r * n + k] -= f * M[c * n + k];
+      v[r] -= f * v[c];
+    }
+  }
+  const x = new Array(n);
+  for (let r = n - 1; r >= 0; r--) { let s = v[r]; for (let k = r + 1; k < n; k++) s -= M[r * n + k] * x[k]; x[r] = s / M[r * n + r]; }
+  return x;
+}
+function homografia(src, dst) {                    // DLT normalizada por mínimos quadrados: src (mundo) -> dst (px)
+  const Ta = normaliza(src), Tb = normaliza(dst), M = new Float64Array(64), v = new Float64Array(8);
+  for (let i = 0; i < src.length; i++) {
+    const a = ap(Ta, src[i].x, src[i].y), b = ap(Tb, dst[i].x, dst[i].y);
+    for (const [r, t] of [[[a.x, a.y, 1, 0, 0, 0, -b.x * a.x, -b.x * a.y], b.x], [[0, 0, 0, a.x, a.y, 1, -b.y * a.x, -b.y * a.y], b.y]])
+      for (let j = 0; j < 8; j++) { v[j] += r[j] * t; for (let k = 0; k < 8; k++) M[j * 8 + k] += r[j] * r[k]; }
+  }
+  const h = resolve(M, v, 8);
+  if (!h) return null;
+  const R = m3(inv3(Tb), m3([...h, 1], Ta));
+  return R.map(x => x / R[8]);
+}
+function rigido(src, dst) {                        // dst ≈ rotação·src + translação
+  let ax = 0, ay = 0, bx = 0, by = 0, sc = 0, ss = 0;
+  for (let i = 0; i < src.length; i++) { ax += src[i].x; ay += src[i].y; bx += dst[i].x; by += dst[i].y; }
+  ax /= src.length; ay /= src.length; bx /= src.length; by /= src.length;
+  for (let i = 0; i < src.length; i++) {
+    const px = src[i].x - ax, py = src[i].y - ay, qx = dst[i].x - bx, qy = dst[i].y - by;
+    sc += px * qx + py * qy; ss += px * qy - py * qx;
+  }
+  const a = Math.atan2(ss, sc), c = Math.cos(a), s = Math.sin(a);
+  return {a, x: bx - (c * ax - s * ay), y: by - (s * ax + c * ay)};
+}
+const folhaMundo = (f, x, y) => { const T = Ts[f], c = Math.cos(T.a), s = Math.sin(T.a); return {x: c * x - s * y + T.x, y: s * x + c * y + T.y}; };
+const mundoFolha = (f, x, y) => { const T = Ts[f], c = Math.cos(T.a), s = Math.sin(T.a), dx = x - T.x, dy = y - T.y; return {x: c * dx + s * dy, y: -s * dx + c * dy}; };
+function cantosMarca(id) {                         // cantos do quadrado preto em unidades da folha, horário a partir do topo-esquerdo
+  const f = MARC.ids[0].includes(id) ? 0 : 1, x = MARC.xs[MARC.ids[f].indexOf(id)], y = MARC.y, L = MARC.lado;
+  return {f, p: [{x, y}, {x: x + L, y}, {x: x + L, y: y + L}, {x, y: y + L}]};
+}
+
+// ---------- detecção dos marcadores na resolução da câmera ----------
+const detector = new AR.Detector({dictionaryName: 'ARUCO_4X4_1000', maxHammingDistance: 0});
+const VALIDOS = new Set(MARC.ids.flat());
+const dcan = novo(2, 2), dctx = dcan.getContext('2d', {willReadFrequently: true});
+function detecta(F, t) {
+  const perdido = t - tVisto > .5, longo = perdido && nQuadro & 1 ? 1600 : 960;   // perdido: alterna com resolução maior (folha longe)
+  const f = Math.min(1, longo / Math.max(F.w, F.h)), w = Math.round(F.w * f), h = Math.round(F.h * f);
+  if (dcan.width !== w || dcan.height !== h) { dcan.width = w; dcan.height = h; }
+  dctx.drawImage(F.img, 0, 0, w, h);
+  const t0 = performance.now(), ms = detector.detect(dctx.getImageData(0, 0, w, h));
+  detMs = detMs * .8 + (performance.now() - t0) * .2;
+  const porId = new Map();
+  for (const m of ms) if (VALIDOS.has(m.id)) {
+    const c = m.corners.map(p => ({x: p.x / f, y: p.y / f})), area = Math.abs((c[2].x - c[0].x) * (c[3].y - c[1].y) - (c[3].x - c[1].x) * (c[2].y - c[0].y));
+    if (!porId.has(m.id) || porId.get(m.id).area < area) porId.set(m.id, {id: m.id, c, area});
+  }
+  marcas = [...porId.values()];
+}
+
+// ---------- pose: homografia mundo -> px do vídeo ----------
+function liga() {                                  // as duas folhas no mesmo quadro: mede o vão e o giro reais da folha 2
+  const por = [[], []];
+  for (const m of marcas) { const k = cantosMarca(m.id); por[k.f].push({m, k}); }
+  if (!por[0].length || !por[1].length) return;
+  const HA = homografia(por[0].flatMap(o => o.k.p), por[0].flatMap(o => o.m.c));
+  if (!HA) return;
+  const HAi = inv3(HA), src = por[1].flatMap(o => o.k.p), dst = por[1].flatMap(o => o.m.c.map(p => ap(HAi, p.x, p.y)));
+  const r = rigido(src, dst), c = Math.cos(r.a), s = Math.sin(r.a);
+  let e = 0;
+  for (let i = 0; i < src.length; i++) e += Math.hypot(c * src[i].x - s * src[i].y + r.x - dst[i].x, s * src[i].x + c * src[i].y + r.y - dst[i].y);
+  est.res = e / src.length;
+  if (est.res > 8 || Math.abs(r.a) > .5) return;   // leitura ruim (folha muito oblíqua): ignora
+  const T = Ts[1], a = T.n < 4 ? .5 : .08;
+  T.a += (r.a - T.a) * a; T.x += (r.x - T.x) * a; T.y += (r.y - T.y) * a; T.n++;
+  est.ligado = T.n >= 4;
+}
+function pose(t) {
+  if (!marcas.length) { est.rastreio = t - tVisto < .4; return; }
+  liga();
+  const src = [], dst = [];
+  for (const m of marcas) { const k = cantosMarca(m.id); k.p.forEach((p, i) => { src.push(folhaMundo(k.f, p.x, p.y)); dst.push(m.c[i]); }); }
+  const Hr = homografia(src, dst);
+  if (!Hr) return;
+  if (!H || t - tVisto > .4) H = Hr;
+  else {                                           // suaviza tremor; movimento grande passa direto
+    let cx = 0, cy = 0;
+    for (const p of src) { cx += p.x; cy += p.y; }
+    const a0 = ap(H, cx / src.length, cy / src.length), a1 = ap(Hr, cx / src.length, cy / src.length);
+    const al = Math.min(1, .35 + Math.hypot(a1.x - a0.x, a1.y - a0.y) / 12);
+    H = H.map((v, i) => v + (Hr[i] - v) * al);
+  }
+  Hi = inv3(H); tVisto = t; est.rastreio = true;
+  if (!est.ativo) {                                // primeira vez: Bê nasce no início da folha vista
+    const f = marcas.some(m => cantosMarca(m.id).f === 0) ? 0 : 1, sp = MAPA.folhas[FOLHAS[f]].spawn, w = folhaMundo(f, sp.x, sp.y);
+    Object.assign(salvo, {x: (w.x - GX0) / C, y: (w.y - GY0) / C, ok: true});
+    est.ativo = true; renasce();
+  }
+}
+
+// ---------- colisão do mapa (impresso) no mundo ----------
+function retangulo(f, x, y, w, h, tp) {
+  const cs = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]].map(([a, b]) => folhaMundo(f, a, b));
+  const x0 = Math.max(0, Math.floor((Math.min(...cs.map(p => p.x)) - GX0) / C)), x1 = Math.min(GW - 1, Math.ceil((Math.max(...cs.map(p => p.x)) - GX0) / C));
+  const y0 = Math.max(0, Math.floor((Math.min(...cs.map(p => p.y)) - GY0) / C)), y1 = Math.min(GH - 1, Math.ceil((Math.max(...cs.map(p => p.y)) - GY0) / C));
+  for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
+    const q = mundoFolha(f, GX0 + (gx + .5) * C, GY0 + (gy + .5) * C);
+    if (q.x >= x && q.x < x + w && q.y >= y && q.y < y + h) fixo[gy * GW + gx] = tp;
+  }
+}
+function rasteriza() {
+  fixo.fill(LIVRE);
+  FOLHAS.forEach((n, f) => {
+    const F = MAPA.folhas[n];
+    for (const p of F.plataformas) retangulo(f, p.x, p.y, p.w, Math.min(p.h, 300 - p.y), p.umSentido ? UM : CHAO);
+    for (const z of F.zonasMorte) retangulo(f, z.x, z.y, z.w, 300 - z.y, PERIGO);
+  });
+  rasterTs = Ts.map(T => ({...T}));
+}
+const mudouTs = () => !rasterTs || Ts.some((T, i) => Math.hypot(T.x - rasterTs[i].x, T.y - rasterTs[i].y) > .5 || Math.abs(T.a - rasterTs[i].a) > .002);
+
+// ---------- mão: segmentos em px do vídeo viram cápsulas CORPO no mundo ----------
+const OSSOS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17],[1,5],[0,9],[0,13]];
+async function carregaMaoIA() {
+  const V = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  const v = await import(V + '/vision_bundle.mjs');
+  const fs = await v.FilesetResolver.forVisionTasks(V + '/wasm');
+  maoIA = await v.HandLandmarker.createFromOptions(fs, {
+    baseOptions: {modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate: 'GPU'},
+    runningMode: 'VIDEO', numHands: 2});
+}
+function segmentosMao() {
+  if ($('corpo').value === 'off') return [];
+  if (fonte === 'teste') return $('mao').checked ? maoTeste() : [];
+  if (!maoIA || !video || video.readyState < 2) return [];
+  const vw = video.videoWidth, vh = video.videoHeight, segs = [];
+  for (const m of maoIA.detectForVideo(video, performance.now()).landmarks) {
+    const p = m.map(l => ({x: l.x * vw, y: l.y * vh})), r = Math.hypot(p[0].x - p[9].x, p[0].y - p[9].y) * .2;
+    for (const [a, b] of OSSOS) segs.push({a: p[a], b: p[b], r});
+  }
+  return segs;
+}
+function carimbaMao() {
+  if (!Hi) return;
+  const grade = p => { const w = ap(Hi, p.x, p.y); return {x: (w.x - GX0) / C, y: (w.y - GY0) / C}; };
+  for (const s of maoSegs) {
+    const a = grade(s.a), b = grade(s.b), r = Math.max(1, Math.hypot(...Object.values(grade({x: s.a.x, y: s.a.y + s.r})).map((v, i) => v - [a.x, a.y][i])));
+    if (![a.x, a.y, b.x, b.y, r].every(Number.isFinite) || r > 60 || Math.hypot(b.x - a.x, b.y - a.y) > GW) continue;
+    const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y)) + 1;
+    for (let k = 0; k <= n; k++) {
+      const cx = a.x + (b.x - a.x) * k / n, cy = a.y + (b.y - a.y) * k / n;
+      for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(GH - 1, cy + r); y++)
+        for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(GW - 1, cx + r); x++)
+          if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r && masc[y * GW + x] !== CHAO) masc[y * GW + x] = CORPO;
+    }
+  }
+}
+
+// ---------- física (números do jogo, em células de 2 unidades) ----------
+const tipo = (x, y) => { x = Math.floor(x); y = Math.floor(y); return x >= 0 && x < GW && y >= 0 && y < GH ? masc[y * GW + x] : LIVRE; };
+const sol = (x, y) => { const t = tipo(x, y); return t === CHAO || t === CORPO; };
+const apoio = (x, y) => { const t = tipo(x, y); return t === UM ? tipo(x, y - 1) !== UM : t === CHAO || t === CORPO; };   // um sentido: só a face de cima
+function linha(r, x0, x1, f = sol) { for (let x = Math.floor(x0); x <= Math.floor(x1); x++) if (f(x, r)) return true; return false; }
+function pisaImpresso(r, x0, x1) { for (let x = Math.floor(x0); x <= Math.floor(x1); x++) { const t = tipo(x, r); if (t === CHAO || t === UM) return true; } return false; }
+function renasce() { Object.assign(P, {x: salvo.x, y: salvo.y - 1, vx: 0, vy: 0, chao: false}); est.invul = .6; }
+function gatilhos(S, hw) {
+  for (let y = Math.floor(P.y) - S + 1; y < Math.floor(P.y); y++)
+    for (let x = Math.floor(P.x - hw); x <= Math.floor(P.x + hw); x++)
+      if (tipo(x, y) === PERIGO && est.invul <= 0) { est.mortes++; renasce(); return; }
+  const wx = GX0 + P.x * C, wy = GY0 + P.y * C, hb = MAPA.personagem.hitbox;
+  for (const d of douradas) if (!d.pega) {
+    const w = folhaMundo(d.f, d.x, d.y);
+    if (Math.abs(w.x - wx) < hb.w / 2 + 9 && w.y > wy - hb.h - 9 && w.y < wy + 9) { d.pega = true; d.t = 0; }
+  }
+  const q = mundoFolha(CHEGADA.f, wx, wy - hb.h / 2);
+  if (q.x > CHEGADA.x - hb.w / 2 && q.x < CHEGADA.x + CHEGADA.w + hb.w / 2 && q.y > CHEGADA.y - hb.h / 2 && q.y < CHEGADA.y + CHEGADA.h + hb.h / 2) est.chegou = true;
+}
+function fisica(dt) {
+  if (!est.ativo || !est.rastreio) return;         // sem marcadores na vista o jogo espera
+  const F = MAPA.fisica, hb = MAPA.personagem.hitbox, S = hb.h / C, u = 1 / C, hw = hb.w / 2 / C, degrau = Math.ceil(S * .3);
+  const dir = (teclas.d ? 1 : 0) - (teclas.e ? 1 : 0);
+  P.vx = dir * F.corrida * u; if (dir) P.olha = dir;
+  if (P.vx) {
+    const nx = P.x + P.vx * dt, borda = nx + Math.sign(P.vx) * hw;
+    let bloq = false;
+    for (let y = Math.floor(P.y) - S; y < Math.floor(P.y) - degrau; y++) if (sol(borda, y)) { bloq = true; break; }
+    if (!bloq) {
+      P.x = nx;
+      if (P.chao) for (let k = 0; k < degrau && linha(Math.floor(P.y) - 1, P.x - hw, P.x + hw); k++) P.y -= 1;
+    }
+  }
+  P.coy = P.chao ? F.coyote : P.coy - dt;
+  if (teclas.pulo && !teclas.usado && P.coy > 0) { P.vy = -F.pulo * u; P.chao = false; P.coy = 0; teclas.usado = true; P.cortou = false; }
+  if (!teclas.pulo && P.vy < 0 && !P.cortou) { P.vy *= F.cortePulo; P.cortou = true; }
+  P.vy = Math.min(P.vy + F.gravidade * u * dt, F.quedaMax * u);
+  const ny = P.y + P.vy * dt, eraChao = P.chao;
+  P.chao = false;
+  if (P.vy >= 0) {
+    for (let r = Math.floor(P.y); r <= Math.floor(ny + (eraChao ? .6 : 0)); r++)
+      if (linha(r, P.x - hw, P.x + hw, apoio)) { P.y = r; P.vy = 0; P.chao = true; break; }
+    if (!P.chao) P.y = ny;
+    for (let k = 0; k < S && linha(Math.floor(P.y) - 1, P.x - hw, P.x + hw); k++) { P.y = Math.floor(P.y) - 1; P.chao = true; P.vy = 0; }  // a mão subiu
+  } else P.y = ny;
+  if (P.chao && !eraChao) P.pouso = .15;
+  P.pouso -= dt;
+  if (P.chao && pisaImpresso(Math.floor(P.y), P.x - hw, P.x + hw)) { salvo.x = P.x - P.olha * S * .6; salvo.y = P.y; salvo.ok = true; }  // na mão não salva
+  est.invul -= dt;
+  gatilhos(S, hw);
+  for (const d of douradas) if (d.pega) d.t += dt;
+  if (P.y >= GH) { est.quedas++; renasce(); }
+  const a = !P.chao ? (P.vy < 0 ? 'jump' : 'fall') : P.vx ? 'run' : P.pouso > 0 ? 'land' : 'idle';
+  if (P.anim !== a) { P.anim = a; P.q = 0; P.tq = 0; }
+  const an = ATLAS.animations[P.anim];
+  P.tq += dt;
+  while (P.tq >= 1 / an.fps) { P.tq -= 1 / an.fps; P.q = an.loop ? (P.q + 1) % an.frames.length : Math.min(P.q + 1, an.frames.length - 1); }
+}
+
+// ---------- cena de teste: parede com as 2 folhas impressas, câmera virtual ----------
+const K = 1.5, FA = {x: 300, y: 250}, ROT_B = .025, SW = 2400, SH = 1000;
+const cena = novo(SW, SH), cctx = cena.getContext('2d'), FW = 1280, FH = 720, quadro = novo(FW, FH), qctx = quadro.getContext('2d');
+const cam = {x: 0, y: 0, z: .6, r: 0}, marcaImg = [];
+const folhaB = () => ({x: FA.x + (424 + +$('vao').value) * K, y: FA.y + 6});
+function desenhaFolha(g, n, comChegada, f) {     // em unidades da folha (mesmo desenho de folhas-teste.html)
+  const F = MAPA.folhas[n];
+  g.fillStyle = '#f6f4ef'; g.fillRect(0, 0, 424, 300);
+  for (const p of F.plataformas) {
+    g.fillStyle = '#23396A'; g.fillRect(p.x, p.y, p.w, Math.min(p.h, 300 - p.y));
+    g.fillStyle = '#2A89D5'; g.fillRect(p.x, p.y, p.w, 3);
+  }
+  for (const z of F.zonasMorte) {
+    const zh = 300 - z.y;
+    g.fillStyle = '#D7263D'; g.fillRect(z.x, z.y, z.w, zh); g.fillStyle = '#fff';
+    for (let s = 0; s < 4; s++) { g.beginPath(); g.moveTo(z.x + s * z.w / 4 + 1.5, z.y + zh - 1.5); g.lineTo(z.x + (s + .5) * z.w / 4, z.y + 6); g.lineTo(z.x + (s + 1) * z.w / 4 - 1.5, z.y + zh - 1.5); g.fill(); }
+  }
+  for (const d of F.douradas) { g.fillStyle = '#F2C230'; g.beginPath(); g.arc(d.x, d.y, 9, 0, 7); g.fill(); }
+  if (comChegada) { g.fillStyle = '#2BA84A'; g.fillRect(380, 204, 32, 48); g.fillStyle = '#fff'; g.fillRect(388, 212, 16, 16); }
+  g.fillStyle = '#A9C0D2'; g.font = 'bold 17px system-ui'; g.fillText(F.lugar, 12, 122);
+  const L = MARC.lado;
+  MARC.ids[f].forEach((id, j) => g.drawImage(marcaImg[id], MARC.xs[j] - L / 6, MARC.y - L / 6, L * 8 / 6, L * 8 / 6));
+}
+function desenhaCena() {
+  const g = cctx; let s = 7;
+  const R = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#d8cdb9'; g.fillRect(0, 0, SW, SH);
+  for (let i = 0; i < 12000; i++) { g.fillStyle = R() < .5 ? '#cdc1ab' : '#e2d8c6'; g.fillRect(R() * SW | 0, R() * SH | 0, 2 + R() * 5 | 0, 2 + R() * 5 | 0); }
+  const B = folhaB();
+  [[FA, 0], [B, ROT_B]].forEach(([o, rot], f) => {
+    g.setTransform(K * Math.cos(rot), K * Math.sin(rot), -K * Math.sin(rot), K * Math.cos(rot), o.x, o.y);
+    g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(4, 5, 424, 300);
+    desenhaFolha(g, FOLHAS[f], f === 1, f);
+  });
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  if ($('mao').checked) {
+    g.fillStyle = '#c8906c';
+    for (const s of maoCena()) { g.lineCap = 'round'; g.strokeStyle = '#c8906c'; g.lineWidth = s.r * 2; g.beginPath(); g.moveTo(s.a.x, s.a.y); g.lineTo(s.b.x, s.b.y); g.stroke(); }
+  }
+}
+function maoCena() {                              // mão atravessando o vão na altura do chão (px da cena)
+  const yc = FA.y + 252 * K + 10, xa = FA.x + 390 * K, xb = folhaB().x + 40 * K, xm = (xa + xb) / 2;
+  return [{a: {x: xa, y: yc}, b: {x: xb, y: yc}, r: 12}, {a: {x: xm, y: yc + 10}, b: {x: xm, y: SH}, r: 40}];
+}
+const cenaQuadro = p => { const c = Math.cos(cam.r), s = Math.sin(cam.r), dx = (p.x - cam.x) * cam.z, dy = (p.y - cam.y) * cam.z; return {x: FW / 2 + c * dx - s * dy, y: FH / 2 + s * dx + c * dy}; };
+function maoTeste() { return maoCena().map(s => ({a: cenaQuadro(s.a), b: cenaQuadro(s.b), r: s.r * cam.z})); }
+function geraQuadro(t) {
+  cam.z = +$('zoom').value / 100;
+  if ($('balanco').checked) { cam.x = cam.bx + 120 * Math.sin(t * .7); cam.y = cam.by + 30 * Math.sin(t * 1.13); cam.r = .06 * Math.sin(t * .9); }
+  const g = qctx;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#000'; g.fillRect(0, 0, FW, FH);
+  g.translate(FW / 2, FH / 2); g.rotate(cam.r); g.scale(cam.z, cam.z); g.translate(-cam.x, -cam.y);
+  g.filter = 'blur(.6px)'; g.drawImage(cena, 0, 0); g.filter = 'none';
+  g.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+// ---------- desenho ----------
+function desenha(F) {
+  const W = tela.width = innerWidth * devicePixelRatio, Ht = tela.height = innerHeight * devicePixelRatio, dp = devicePixelRatio;
+  const k = Math.max(W / F.w, Ht / F.h), ox = (W - F.w * k) / 2, oy = (Ht - F.h * k) / 2;
+  vista = {k, ox, oy};
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(F.img, ox, oy, F.w * k, F.h * k); // vídeo na resolução nativa, um único recorte "cover"
+  const HS = H && m3([k, 0, ox, 0, k, oy, 0, 0, 1], H), tl = p => ({x: ox + p.x * k, y: oy + p.y * k});
+  const poli = (pts, cor, linha) => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); if (cor) { ctx.fillStyle = cor; ctx.fill(); } if (linha) { ctx.strokeStyle = linha; ctx.lineWidth = 2 * dp; ctx.stroke(); } };
+  const ret = (f, x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]].map(([a, b]) => { const m = folhaMundo(f, a, b); return ap(HS, m.x, m.y); });
+  if ($('verMasc').checked) {
+    for (const m of marcas) poli(m.c.map(tl), null, '#3f6');
+    if (HS && est.rastreio) {
+      FOLHAS.forEach((n, f) => {
+        const Fm = MAPA.folhas[n];
+        poli(ret(f, 0, 0, 424, 300), null, '#fff6');
+        for (const p of Fm.plataformas) poli(ret(f, p.x, p.y, p.w, Math.min(p.h, 300 - p.y)), p.umSentido ? 'rgba(255,40,160,.3)' : 'rgba(255,40,160,.45)');
+        for (const z of Fm.zonasMorte) poli(ret(f, z.x, z.y, z.w, 300 - z.y), 'rgba(255,0,0,.45)');
+      });
+      poli(ret(CHEGADA.f, CHEGADA.x, CHEGADA.y, CHEGADA.w, CHEGADA.h), 'rgba(0,230,90,.4)');
+    }
+    ctx.lineCap = 'round';
+    for (const s of maoSegs) { const a = tl(s.a), b = tl(s.b); ctx.strokeStyle = 'rgba(0,220,255,.5)'; ctx.lineWidth = s.r * 2 * k; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+  }
+  if (HS && est.rastreio) for (const d of douradas) if (d.pega) {   // dourada coletada: anel que sobe e some
+    const w = folhaMundo(d.f, d.x, d.y), p = ap(HS, w.x, w.y - Math.min(d.t, .6) * 40), e = Math.hypot(...Object.values(ap(HS, w.x + 10, w.y)).map((v, i) => v - [p.x, p.y][i])) / 10;
+    ctx.globalAlpha = Math.max(.35, 1 - d.t); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3 * dp;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 11 * e, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  if (!est.rastreio) {                              // mira: convida a apontar para os quadrados
+    const m = Math.min(W, Ht) * .42, x = (W - m) / 2, y = (Ht - m) / 2, l = m * .18;
+    ctx.strokeStyle = '#F2C230'; ctx.lineWidth = 5 * dp; ctx.beginPath();
+    for (const [cx, cy, sx, sy] of [[x, y, 1, 1], [x + m, y, -1, 1], [x, y + m, 1, -1], [x + m, y + m, -1, -1]]) { ctx.moveTo(cx + sx * l, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * l); }
+    ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = `bold ${20 * dp}px system-ui`; ctx.textAlign = 'center';
+    ctx.fillText(est.ativo ? 'Volte a mirar nos quadrados da folha' : 'Aponte para os quadrados pretos da folha', W / 2, y + m + 34 * dp); ctx.textAlign = 'start';
+  }
+  if (est.chegou) { ctx.fillStyle = '#2BA84A'; ctx.font = `bold ${40 * dp}px system-ui`; ctx.textAlign = 'center'; ctx.fillText('CHEGOU!', W / 2, Ht * .2); ctx.textAlign = 'start'; }
+  if (HS && est.ativo && est.rastreio) {
+    const wx = GX0 + P.x * C, wy = GY0 + P.y * C, p0 = ap(HS, wx, wy), px = ap(HS, wx + 10, wy), py = ap(HS, wx, wy + 10);
+    const ex = {x: (px.x - p0.x) / 10, y: (px.y - p0.y) / 10}, ey = {x: (py.x - p0.x) / 10, y: (py.y - p0.y) / 10};
+    if (p0.x < 0 || p0.x > W || p0.y < 0 || p0.y > Ht) {   // seta na borda apontando onde o Bê está
+      const bx = Math.max(W * .05, Math.min(W * .95, p0.x)), by = Math.max(Ht * .06, Math.min(Ht * .94, p0.y)), ang = Math.atan2(p0.y - by, p0.x - bx), r = 18 * dp;
+      ctx.fillStyle = '#F2C230'; ctx.beginPath();
+      ctx.moveTo(bx + Math.cos(ang) * r, by + Math.sin(ang) * r);
+      ctx.lineTo(bx + Math.cos(ang + 2.5) * r, by + Math.sin(ang + 2.5) * r);
+      ctx.lineTo(bx + Math.cos(ang - 2.5) * r, by + Math.sin(ang - 2.5) * r); ctx.fill();
+    }
+    const fr = ATLAS.animations[P.anim].frames[P.q];
+    ctx.save();
+    if (est.invul > 0 && (est.invul * 10 | 0) % 2) ctx.globalAlpha = .25;
+    ctx.imageSmoothingEnabled = false;
+    ctx.setTransform(ex.x * P.olha, ex.y * P.olha, ey.x, ey.y, p0.x, p0.y);   // segue escala, giro e inclinação da parede
+    ctx.drawImage(sprite, fr.x, fr.y, fr.w, fr.h, -ATLAS.anchor.x, -ATLAS.anchor.y, fr.w, fr.h);
+    ctx.restore();
+  }
+  $('info').textContent =
+    `fps ${est.fps.toFixed(0)}  det ${detMs.toFixed(0)} ms  vídeo ${F.w}×${F.h}\n` +
+    `marcas [${marcas.map(m => m.id).sort().join(',')}]  ${est.ligado ? `ligado vão ${(Ts[1].x - 424).toFixed(0)} giro ${(Ts[1].a * 57.3).toFixed(1)}°` : 'folha 2 no vão presumido'}\n` +
+    `douradas ${douradas.filter(d => d.pega).length}/${douradas.length}  quedas ${est.quedas}  mortes ${est.mortes}${est.chegou ? '  CHEGOU' : ''}`;
+}
+
+// ---------- laço ----------
+let vista = {k: 1, ox: 0, oy: 0};
+function fonteAtual() {
+  if (fonte === 'cam') return video && video.readyState >= 2 ? {img: video, w: video.videoWidth, h: video.videoHeight} : null;
+  return {img: quadro, w: FW, h: FH};
+}
+function passo(dt, t) {
+  nQuadro++;
+  if (fonte === 'teste') geraQuadro(t);
+  const F = fonteAtual();
+  if (!F) { tela.width = tela.width; return; }
+  if (detMs < 35 || nQuadro & 1 || !est.rastreio) { detecta(F, t); pose(t); }   // celular lento: detecta um quadro sim, outro não
+  if (mudouTs()) rasteriza();
+  masc.set(fixo); maoSegs = segmentosMao(); carimbaMao();
+  fisica(dt); desenha(F);
+}
+let tAnt = performance.now();
+function laco(now) {
+  const dt = Math.min(.05, (now - tAnt) / 1000); tAnt = now;
+  est.fps = est.fps * .9 + (dt > 0 ? .1 / dt : 0);
+  passo(dt, now / 1000);
+  requestAnimationFrame(laco);
+}
+
+// ---------- entrada ----------
+let arr = null;
+tela.onpointerdown = e => { arr = {x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y, mov: false}; tela.setPointerCapture(e.pointerId); };
+tela.onpointermove = e => {
+  if (!arr) return;
+  const dx = e.clientX - arr.x, dy = e.clientY - arr.y;
+  if (Math.hypot(dx, dy) > 6) arr.mov = true;
+  if (arr.mov && fonte === 'teste') { const f = devicePixelRatio / vista.k / cam.z; cam.bx = cam.x = arr.cx - dx * f; cam.by = cam.y = arr.cy - dy * f; }
+};
+tela.onpointerup = e => {
+  if (arr && !arr.mov && Hi && est.rastreio) {     // toque: solta o Bê ali (depuração)
+    const v = {x: (e.clientX * devicePixelRatio - vista.ox) / vista.k, y: (e.clientY * devicePixelRatio - vista.oy) / vista.k}, w = ap(Hi, v.x, v.y);
+    Object.assign(P, {x: (w.x - GX0) / C, y: (w.y - GY0) / C, vx: 0, vy: 0, chao: false}); est.chegou = false;
+  }
+  arr = null;
+};
+$('hud').querySelector('b').onclick = () => $('hud').classList.toggle('min');
+const mapaTecla = {ArrowLeft: 'e', KeyA: 'e', ArrowRight: 'd', KeyD: 'd', Space: 'pulo', ArrowUp: 'pulo', KeyW: 'pulo'};
+addEventListener('keydown', e => { const t = mapaTecla[e.code]; if (t) { teclas[t] = true; e.preventDefault(); } });
+addEventListener('keyup', e => { const t = mapaTecla[e.code]; if (t) { teclas[t] = false; if (t === 'pulo') teclas.usado = false; } });
+for (const [id, t] of [['bE', 'e'], ['bD', 'd'], ['bP', 'pulo']]) {
+  const b = $(id);
+  b.onpointerdown = e => { teclas[t] = true; b.setPointerCapture(e.pointerId); };
+  b.onpointerup = b.onpointercancel = () => { teclas[t] = false; if (t === 'pulo') teclas.usado = false; };
+}
+$('vao').oninput = $('mao').onchange = () => desenhaCena();
+$('fonte').onchange = async () => {
+  fonte = $('fonte').value; H = Hi = null; tVisto = -9;
+  document.body.classList.toggle('cam', fonte === 'cam');
+  if (fonte === 'cam' && !video) {
+    try {
+      const st = await navigator.mediaDevices.getUserMedia({video: {facingMode: {ideal: 'environment'}, width: {ideal: 1920}, height: {ideal: 1080}}, audio: false});
+      const tr = st.getVideoTracks()[0];
+      tr.applyConstraints({advanced: [{focusMode: 'continuous'}]}).catch(() => {});
+      video = Object.assign(document.createElement('video'), {playsInline: true, muted: true, srcObject: st});
+      await video.play();
+    } catch (err) { alert('Câmera indisponível: ' + err.message + '\n(no celular precisa de https)'); }
+    if ($('corpo').value === 'ia' && !maoIA) carregaMaoIA().catch(err => { console.warn('mão IA', err); $('corpo').value = 'off'; });
+  }
+};
+
+Promise.all([
+  fetch('be-atlas.json').then(r => r.json()),
+  fetch('jornada-mapa.json').then(r => r.json()),
+  sprite.decode(),
+  ...MARC.ids.flat().map(id => { const im = new Image(); im.src = 'data:image/svg+xml,' + encodeURIComponent(detector.dictionary.generateSVG(id)); marcaImg[id] = im; return im.decode(); }),
+]).then(([a, m]) => {
+  ATLAS = a; MAPA = m;
+  douradas = FOLHAS.flatMap((n, f) => MAPA.folhas[n].douradas.map(d => ({f, x: d.x, y: d.y, pega: false, t: 0})));
+  desenhaCena();
+  const B = folhaB();
+  cam.bx = cam.x = (FA.x + B.x + 424 * K) / 2; cam.by = cam.y = FA.y + 150 * K;
+  window.__J = {P, est, cam, Ts, teclas, douradas, passo, desenhaCena, cenaQuadro, folhaB, FA, K, ROT_B, GX0, GY0, C,
+    H: () => H, marcas: () => marcas, tipo: (wx, wy) => tipo((wx - GX0) / C, (wy - GY0) / C)};
+  const q = new URLSearchParams(location.search);
+  if (q.has('cam')) { $('fonte').value = 'cam'; $('fonte').onchange(); $('hud').classList.add('min'); }
+  if (!q.has('pausa')) requestAnimationFrame(laco);
+});
+</script>
+</body>
+</html>
