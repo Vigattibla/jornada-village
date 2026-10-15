@@ -48,6 +48,7 @@ const QS = new URLSearchParams(location.search);
 // ?l=N: local com blocos dourados na parede (1 marcador por bloco, ids base+k); o nível é contínuo e os blocos só localizam
 const LOCAIS = {1: {nome: 'Corredor', t: [13, 14, 15, 16, 17]}}, nL = QS.get('l');
 const LOCAL = LOCAIS[nL] ? {...LOCAIS[nL], base: 100 + 10 * (nL - 1)} : null;
+const SEGURA = LOCAL ? 1.2 : .4;                  // s sem ver marcador antes de esconder o nível
 const BU = BLOCO.mm * 424 / 280 / BLOCO.miolo.s;   // unidades da folha por px do bloco
 const FOLHAS = LOCAL ? LOCAL.t.map(v => v - 1) : (QS.get('t') || '1,6').split(',').map(v => Math.max(1, Math.min(12, v | 0)) - 1).slice(0, 4);
 const NF = FOLHAS.length, MARC = LOCAL                   // bloco centrado no alto de cada trecho
@@ -137,6 +138,8 @@ function cantosMarca(id) {                         // cantos do quadrado preto e
 // ---------- detecção dos marcadores na resolução da câmera ----------
 const detector = new AR.Detector({dictionaryName: 'ARUCO_4X4_1000', maxHammingDistance: 0});
 const VALIDOS = new Set(MARC.ids.flat());
+const RUIDO = +QS.get('ruido') || 0, FALHA = +QS.get('falha') || 0;   // teste: tremor dos cantos (px) e chance de perder o quadro
+const gauss = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(6.2832 * Math.random());
 const dcan = novo(2, 2), dctx = dcan.getContext('2d', {willReadFrequently: true});
 function detecta(F, t) {
   const perdido = t - tVisto > .5, longo = perdido && nQuadro & 1 ? 1600 : 960;   // perdido: alterna com resolução maior (folha longe)
@@ -150,7 +153,8 @@ function detecta(F, t) {
     const c = m.corners.map(p => ({x: p.x / f, y: p.y / f})), area = Math.abs((c[2].x - c[0].x) * (c[3].y - c[1].y) - (c[3].x - c[1].x) * (c[2].y - c[0].y));
     if (!porId.has(m.id) || porId.get(m.id).area < area) porId.set(m.id, {id: m.id, c, area});
   }
-  marcas = [...porId.values()];
+  marcas = FALHA && Math.random() < FALHA ? [] : [...porId.values()];
+  if (RUIDO) for (const m of marcas) m.c = m.c.map(p => ({x: p.x + RUIDO * gauss(), y: p.y + RUIDO * gauss()}));
 }
 
 // ---------- pose: homografia mundo -> px do vídeo ----------
@@ -181,18 +185,20 @@ function liga() {                                  // placas no mesmo quadro: me
   est.ligado = Ts.every(T => T.n >= 4);
 }
 function pose(t) {
-  if (!marcas.length) { est.rastreio = t - tVisto < .4; return; }
+  if (!marcas.length) { est.rastreio = t - tVisto < SEGURA; return; }   // perdeu alguns quadros: mantém a última pose
   liga();
   const src = [], dst = [];
   for (const m of marcas) { const k = cantosMarca(m.id); k.p.forEach((p, i) => { src.push(ancoraMundo(k.f, p.x, p.y)); dst.push(m.c[i]); }); }
-  const Hr = homografia(src, dst);
+  const Hr = (LOCAL ? afim : homografia)(src, dst);   // bloco de 4 cm: perspectiva extrapolada sacode e vira o nível longe
   if (!Hr) return;
-  if (!H || t - tVisto > .4) H = Hr;
+  if (!H || t - tVisto > SEGURA) H = Hr;
   else {                                           // suaviza tremor; movimento grande passa direto
     let cx = 0, cy = 0;
     for (const p of src) { cx += p.x; cy += p.y; }
-    const a0 = ap(H, cx / src.length, cy / src.length), a1 = ap(Hr, cx / src.length, cy / src.length);
-    const al = Math.min(1, .35 + Math.hypot(a1.x - a0.x, a1.y - a0.y) / 12);
+    cx /= src.length; cy /= src.length;
+    let err = 0;
+    for (const [dx, dy] of LOCAL ? [[0, 0], [60, 0], [0, 60]] : [[0, 0]]) { const a0 = ap(H, cx + dx, cy + dy), a1 = ap(Hr, cx + dx, cy + dy); err = Math.max(err, Math.hypot(a1.x - a0.x, a1.y - a0.y)); }
+    const al = LOCAL ? Math.min(1, .08 + (err / 18) ** 2) : Math.min(1, .35 + err / 12);
     H = H.map((v, i) => v + (Hr[i] - v) * al);
   }
   Hi = inv3(H); tVisto = t; est.rastreio = true;
