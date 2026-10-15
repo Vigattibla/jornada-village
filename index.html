@@ -1,2 +1,3 @@
 <!doctype html><meta charset="utf-8"><title>Jornada pelo Village</title>
-<meta http-equiv="refresh" content="0;url=jogo.html?cam"><a href="jogo.html?cam">Abrir o jogo</a>
+<script>const q = new URLSearchParams(location.search); q.set('cam', ''); location.replace('jogo.html?' + q);</script>
+<a href="jogo.html?cam">Abrir o jogo</a>

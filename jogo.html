@@ -21,11 +21,11 @@ body.cam .t{display:none}
 <body>
 <canvas id="tela"></canvas>
 <div id="hud">
-  <b>Jornada · marcadores</b>
+  <b>Jornada · AR</b>
   <span id="info"></span>
   <label>Fonte <select id="fonte"><option value="teste">cena de teste</option><option value="cam">câmera</option></select></label>
   <label>Mão <select id="corpo"><option value="ia">mão por IA</option><option value="off">desligada</option></select></label>
-  <label><input id="verMasc" type="checkbox" checked> ver colisão</label>
+  <label><input id="verMasc" type="checkbox"> ver colisão</label>
   <label class="t">Vão real <input id="vao" type="range" min="40" max="280" value="110"></label>
   <label class="t">Distância <input id="zoom" type="range" min="25" max="150" value="60"></label>
   <label class="t"><input id="mao" type="checkbox"> mão no vão</label>
@@ -42,14 +42,17 @@ const $ = id => document.getElementById(id);
 const tela = $('tela'), ctx = tela.getContext('2d');
 const novo = (w, h) => Object.assign(document.createElement('canvas'), {width: w, height: h});
 // marcadores ArUco 4x4 no alto de cada folha, em unidades da folha (424×300 = 280×198 mm); lado = quadrado preto
-const MARC = {lado: 84, y: 10, xs: [10, 170, 330], ids: [[0, 1, 2], [3, 4, 5]]};
-const FOLHAS = [0, 5], CHEGADA = {f: 1, x: 380, y: 204, w: 32, h: 48};
+const QS = new URLSearchParams(location.search);
+// o QR traz o mapa (?t=1,6 = lugares do percurso); a placa k (ids 3k..3k+2) só ancora o trecho k na parede
+const FOLHAS = (QS.get('t') || '1,6').split(',').map(v => Math.max(1, Math.min(12, v | 0)) - 1).slice(0, 4);
+const NF = FOLHAS.length, MARC = {lado: 84, y: 10, xs: [10, 170, 330], ids: FOLHAS.map((_, k) => [3 * k, 3 * k + 1, 3 * k + 2])};
+const CHEGADA = FOLHAS[NF - 1] === 11 ? {f: NF - 1, x: 338, y: 204, w: 60, h: 48, arte: true} : {f: NF - 1, x: 380, y: 204, w: 32, h: 48};
 const VAO0 = 150;                                  // vão presumido até a câmera ver as duas folhas juntas
 // mundo = unidades da folha 1; grade de colisão com célula de 2 unidades
-const C = 2, GX0 = -150, GY0 = -150, GW = 650, GH = 300, N = GW * GH;
+const C = 2, GX0 = -150, GY0 = -150, GW = Math.ceil((300 + NF * 424 + (NF - 1) * 300) / C), GH = 300, N = GW * GH;
 const LIVRE = 0, CHAO = 1, CORPO = 2, PERIGO = 3, UM = 4;   // UM = plataforma de um sentido
 const fixo = new Uint8Array(N), masc = new Uint8Array(N);
-const Ts = [{a: 0, x: 0, y: 0, n: 99}, {a: 0, x: 424 + VAO0, y: 0, n: 0}];   // folha -> mundo; n = quadros com as duas juntas
+const Ts = FOLHAS.map((_, k) => ({a: 0, x: k * (424 + VAO0), y: 0, n: k ? 0 : 99}));   // placa -> mundo; n = quadros ligada a outra
 let rasterTs = null;
 let ATLAS, MAPA, video = null, fonte = 'teste', maoIA = null, maoSegs = [], douradas = [];
 let H = null, Hi = null, tVisto = -9, marcas = [], detMs = 0, nQuadro = 0;
@@ -57,7 +60,7 @@ const sprite = new Image(); sprite.src = 'be-spritesheet.png';
 const P = {x: 0, y: 0, vx: 0, vy: 0, chao: false, coy: 0, cortou: true, olha: 1, anim: 'fall', q: 0, tq: 0, pouso: 0};
 const salvo = {x: 0, y: 0, ok: false};
 const teclas = {e: false, d: false, pulo: false, usado: false};
-const est = {ativo: false, rastreio: false, quedas: 0, mortes: 0, chegou: false, invul: 0, fps: 0, ligado: false, res: 0};
+const est = {t0: 0, ativo: false, rastreio: false, quedas: 0, mortes: 0, chegou: false, invul: 0, fps: 0, ligado: false, res: 0};
 
 // ---------- álgebra 3×3 ----------
 const m3 = (a, b) => [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => { const r = i / 3 | 0, c = i % 3; return a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c]; });
@@ -116,7 +119,7 @@ function rigido(src, dst) {                        // dst ≈ rotação·src + t
 const folhaMundo = (f, x, y) => { const T = Ts[f], c = Math.cos(T.a), s = Math.sin(T.a); return {x: c * x - s * y + T.x, y: s * x + c * y + T.y}; };
 const mundoFolha = (f, x, y) => { const T = Ts[f], c = Math.cos(T.a), s = Math.sin(T.a), dx = x - T.x, dy = y - T.y; return {x: c * dx + s * dy, y: -s * dx + c * dy}; };
 function cantosMarca(id) {                         // cantos do quadrado preto em unidades da folha, horário a partir do topo-esquerdo
-  const f = MARC.ids[0].includes(id) ? 0 : 1, x = MARC.xs[MARC.ids[f].indexOf(id)], y = MARC.y, L = MARC.lado;
+  const f = id / 3 | 0, x = MARC.xs[id % 3], y = MARC.y, L = MARC.lado;
   return {f, p: [{x, y}, {x: x + L, y}, {x: x + L, y: y + L}, {x, y: y + L}]};
 }
 
@@ -140,21 +143,25 @@ function detecta(F, t) {
 }
 
 // ---------- pose: homografia mundo -> px do vídeo ----------
-function liga() {                                  // as duas folhas no mesmo quadro: mede o vão e o giro reais da folha 2
-  const por = [[], []];
+function liga() {                                  // placas no mesmo quadro: mede vão e giro reais a partir de uma já ligada
+  const por = FOLHAS.map(() => []);
   for (const m of marcas) { const k = cantosMarca(m.id); por[k.f].push({m, k}); }
-  if (!por[0].length || !por[1].length) return;
-  const HA = homografia(por[0].flatMap(o => o.k.p), por[0].flatMap(o => o.m.c));
+  const vis = por.map((o, f) => o.length ? f : -1).filter(f => f >= 0), ref = vis.find(f => !f || Ts[f].n >= 4);
+  if (vis.length < 2 || ref === undefined) return;
+  const HA = homografia(por[ref].flatMap(o => o.k.p), por[ref].flatMap(o => o.m.c));
   if (!HA) return;
-  const HAi = inv3(HA), src = por[1].flatMap(o => o.k.p), dst = por[1].flatMap(o => o.m.c.map(p => ap(HAi, p.x, p.y)));
-  const r = rigido(src, dst), c = Math.cos(r.a), s = Math.sin(r.a);
-  let e = 0;
-  for (let i = 0; i < src.length; i++) e += Math.hypot(c * src[i].x - s * src[i].y + r.x - dst[i].x, s * src[i].x + c * src[i].y + r.y - dst[i].y);
-  est.res = e / src.length;
-  if (est.res > 8 || Math.abs(r.a) > .5) return;   // leitura ruim (folha muito oblíqua): ignora
-  const T = Ts[1], a = T.n < 4 ? .5 : .08;
-  T.a += (r.a - T.a) * a; T.x += (r.x - T.x) * a; T.y += (r.y - T.y) * a; T.n++;
-  est.ligado = T.n >= 4;
+  const HAi = inv3(HA), R0 = Ts[ref], c0 = Math.cos(R0.a), s0 = Math.sin(R0.a);
+  for (const f of vis) if (f && f !== ref) {
+    const src = por[f].flatMap(o => o.k.p), dst = por[f].flatMap(o => o.m.c.map(p => ap(HAi, p.x, p.y)));
+    const r = rigido(src, dst), c = Math.cos(r.a), s = Math.sin(r.a);
+    let e = 0;
+    for (let i = 0; i < src.length; i++) e += Math.hypot(c * src[i].x - s * src[i].y + r.x - dst[i].x, s * src[i].x + c * src[i].y + r.y - dst[i].y);
+    est.res = e / src.length;
+    if (est.res > 8 || Math.abs(r.a) > .5) continue;   // leitura ruim (placa muito oblíqua): ignora
+    const T = Ts[f], al = T.n < 4 ? .5 : .08, ax = R0.a + r.a, x = c0 * r.x - s0 * r.y + R0.x, y = s0 * r.x + c0 * r.y + R0.y;
+    T.a += (ax - T.a) * al; T.x += (x - T.x) * al; T.y += (y - T.y) * al; T.n++;
+  }
+  est.ligado = Ts.every(T => T.n >= 4);
 }
 function pose(t) {
   if (!marcas.length) { est.rastreio = t - tVisto < .4; return; }
@@ -173,9 +180,9 @@ function pose(t) {
   }
   Hi = inv3(H); tVisto = t; est.rastreio = true;
   if (!est.ativo) {                                // primeira vez: Bê nasce no início da folha vista
-    const f = marcas.some(m => cantosMarca(m.id).f === 0) ? 0 : 1, sp = MAPA.folhas[FOLHAS[f]].spawn, w = folhaMundo(f, sp.x, sp.y);
+    const f = Math.min(...marcas.map(m => cantosMarca(m.id).f)), sp = MAPA.folhas[FOLHAS[f]].spawn, w = folhaMundo(f, sp.x, sp.y);
     Object.assign(salvo, {x: (w.x - GX0) / C, y: (w.y - GY0) / C, ok: true});
-    est.ativo = true; renasce();
+    est.ativo = true; est.t0 = t; renasce();
   }
 }
 
@@ -301,23 +308,11 @@ const K = 1.5, FA = {x: 300, y: 250}, ROT_B = .025, SW = 2400, SH = 1000;
 const cena = novo(SW, SH), cctx = cena.getContext('2d'), FW = 1280, FH = 720, quadro = novo(FW, FH), qctx = quadro.getContext('2d');
 const cam = {x: 0, y: 0, z: .6, r: 0}, marcaImg = [];
 const folhaB = () => ({x: FA.x + (424 + +$('vao').value) * K, y: FA.y + 6});
-function desenhaFolha(g, n, comChegada, f) {     // em unidades da folha (mesmo desenho de folhas-teste.html)
-  const F = MAPA.folhas[n];
-  g.fillStyle = '#f6f4ef'; g.fillRect(0, 0, 424, 300);
-  for (const p of F.plataformas) {
-    g.fillStyle = '#23396A'; g.fillRect(p.x, p.y, p.w, Math.min(p.h, 300 - p.y));
-    g.fillStyle = '#2A89D5'; g.fillRect(p.x, p.y, p.w, 3);
-  }
-  for (const z of F.zonasMorte) {
-    const zh = 300 - z.y;
-    g.fillStyle = '#D7263D'; g.fillRect(z.x, z.y, z.w, zh); g.fillStyle = '#fff';
-    for (let s = 0; s < 4; s++) { g.beginPath(); g.moveTo(z.x + s * z.w / 4 + 1.5, z.y + zh - 1.5); g.lineTo(z.x + (s + .5) * z.w / 4, z.y + 6); g.lineTo(z.x + (s + 1) * z.w / 4 - 1.5, z.y + zh - 1.5); g.fill(); }
-  }
-  for (const d of F.douradas) { g.fillStyle = '#F2C230'; g.beginPath(); g.arc(d.x, d.y, 9, 0, 7); g.fill(); }
-  if (comChegada) { g.fillStyle = '#2BA84A'; g.fillRect(380, 204, 32, 48); g.fillStyle = '#fff'; g.fillRect(388, 212, 16, 16); }
-  g.fillStyle = '#A9C0D2'; g.font = 'bold 17px system-ui'; g.fillText(F.lugar, 12, 122);
+function desenhaFolha(g, f) {                     // placa de âncora impressa (mesmo desenho de placas.html)
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 424, 130);
   const L = MARC.lado;
   MARC.ids[f].forEach((id, j) => g.drawImage(marcaImg[id], MARC.xs[j] - L / 6, MARC.y - L / 6, L * 8 / 6, L * 8 / 6));
+  g.fillStyle = '#999'; g.font = 'bold 10px system-ui'; g.fillText(`JORNADA PELO VILLAGE · PLACA ${f + 1}`, 12, 121);
 }
 function desenhaCena() {
   const g = cctx; let s = 7;
@@ -325,10 +320,10 @@ function desenhaCena() {
   g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#d8cdb9'; g.fillRect(0, 0, SW, SH);
   for (let i = 0; i < 12000; i++) { g.fillStyle = R() < .5 ? '#cdc1ab' : '#e2d8c6'; g.fillRect(R() * SW | 0, R() * SH | 0, 2 + R() * 5 | 0, 2 + R() * 5 | 0); }
   const B = folhaB();
-  [[FA, 0], [B, ROT_B]].forEach(([o, rot], f) => {
+  [[FA, 0], [B, ROT_B]].slice(0, NF).forEach(([o, rot], f) => {
     g.setTransform(K * Math.cos(rot), K * Math.sin(rot), -K * Math.sin(rot), K * Math.cos(rot), o.x, o.y);
-    g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(4, 5, 424, 300);
-    desenhaFolha(g, FOLHAS[f], f === 1, f);
+    g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(3, 4, 424, 130);
+    desenhaFolha(g, f);
   });
   g.setTransform(1, 0, 0, 1, 0, 0);
   if ($('mao').checked) {
@@ -352,8 +347,85 @@ function geraQuadro(t) {
   g.setTransform(1, 0, 0, 1, 0, 0);
 }
 
+// ---------- camada AR: só os caminhos (sem fundo), desenhados no celular e presos à parede pela homografia ----------
+const glc = novo(2, 2), gl = glc.getContext('webgl', {premultipliedAlpha: true, antialias: false});
+const arte = n => `folhas/ar/folha-${String(n + 1).padStart(2, '0')}.png`;
+const artes = FOLHAS.map(n => Object.assign(new Image(), {src: arte(n)})), dourImg = Object.assign(new Image(), {src: 'folha-dourada.png'});
+const colunas = m => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
+let glp = null;
+function glPrepara() {
+  if (!gl) return;
+  const sh = (tp, src) => { const o = gl.createShader(tp); gl.shaderSource(o, src); gl.compileShader(o); return o; }, p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, `attribute vec2 uv; uniform mat3 M; uniform vec2 tam; varying vec2 v;
+    void main() { vec3 q = M * vec3(uv * vec2(424., 300.), 1.); v = uv; gl_Position = vec4(2. * q.x / tam.x - q.z, q.z - 2. * q.y / tam.y, 0., q.z); }`));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, `precision mediump float; uniform sampler2D tx; uniform float rev, sombra; varying vec2 v;
+    void main() { vec4 c = texture2D(tx, v); float d = rev - v.x * 1.15;
+      if (d < 0. || c.a < .01) discard;
+      if (sombra > 0.) { gl_FragColor = vec4(0., 0., 0., c.a * sombra); return; }
+      gl_FragColor = vec4(c.rgb + smoothstep(.15, 0., d) * vec3(1., .8, .3) * c.a, c.a); }`));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.warn('camada AR', gl.getProgramInfoLog(p)); return; }
+  gl.useProgram(p);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
+  const uv = gl.getAttribLocation(p, 'uv'); gl.enableVertexAttribArray(uv); gl.vertexAttribPointer(uv, 2, gl.FLOAT, false, 0, 0);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  const tex = artes.map(im => {
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, im);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    return t;
+  });
+  glp = {tex, M: gl.getUniformLocation(p, 'M'), tam: gl.getUniformLocation(p, 'tam'), rev: gl.getUniformLocation(p, 'rev'), sombra: gl.getUniformLocation(p, 'sombra')};
+}
+const revela = (f, t) => (t - est.t0 - .2 - .6 * f) * 1.4;   // varredura dourada da esquerda para a direita, placa após placa
+function nivel(HS, W, Ht, t) {
+  const Mf = f => { const T = Ts[f], c = Math.cos(T.a), s = Math.sin(T.a), M = m3(HS, [c, -s, T.x, s, c, T.y, 0, 0, 1]); return M[6] * 212 + M[7] * 150 + M[8] < 0 ? M.map(v => -v) : M; };
+  if (!glp) {                                      // sem WebGL: afim pelo centro da placa
+    ctx.save(); ctx.imageSmoothingEnabled = false;
+    FOLHAS.forEach((n, f) => {
+      if (revela(f, t) <= 0) return;
+      const M = Mf(f), q = (x, y) => ap(M, x, y), o = q(212, 150), a = q(222, 150), b = q(212, 160), ex = [(a.x - o.x) / 10, (a.y - o.y) / 10], ey = [(b.x - o.x) / 10, (b.y - o.y) / 10];
+      ctx.setTransform(ex[0], ex[1], ey[0], ey[1], o.x - 212 * ex[0] - 150 * ey[0], o.y - 212 * ex[1] - 150 * ey[1]);
+      ctx.drawImage(artes[f], 0, 0);
+    });
+    ctx.restore(); return;
+  }
+  if (glc.width !== W || glc.height !== Ht) { glc.width = W; glc.height = Ht; }
+  gl.viewport(0, 0, W, Ht); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.uniform2f(glp.tam, W, Ht);
+  FOLHAS.forEach((n, f) => {
+    const rev = revela(f, t);
+    if (rev <= 0) return;
+    const M = Mf(f);
+    gl.bindTexture(gl.TEXTURE_2D, glp.tex[f]); gl.uniform1f(glp.rev, rev);
+    gl.uniform1f(glp.sombra, .22); gl.uniformMatrix3fv(glp.M, false, colunas(m3(M, [1, 0, 2.5, 0, 1, 3.5, 0, 0, 1]))); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.uniform1f(glp.sombra, 0); gl.uniformMatrix3fv(glp.M, false, colunas(M)); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  });
+  ctx.drawImage(glc, 0, 0);
+}
+const jac = (HS, wx, wy) => { const o = ap(HS, wx, wy), a = ap(HS, wx + 10, wy), b = ap(HS, wx, wy + 10); return [(a.x - o.x) / 10, (a.y - o.y) / 10, (b.x - o.x) / 10, (b.y - o.y) / 10, o.x, o.y]; };
+function enfeites(HS, t) {                         // douradas girando e bandeira da chegada, no plano da parede
+  ctx.save(); ctx.imageSmoothingEnabled = false;
+  douradas.forEach((d, i) => {
+    if (d.pega || revela(d.f, t) < 1.4) return;
+    const w = folhaMundo(d.f, d.x, d.y + 2 * Math.sin(t * 3 + i));
+    ctx.setTransform(...jac(HS, w.x, w.y)); ctx.drawImage(dourImg, ((t * 10 + i * 3) % 8 | 0) * 12, 0, 12, 12, -9, -9, 18, 18);
+  });
+  if (!CHEGADA.arte && revela(CHEGADA.f, t) > 1.4) {
+    const b = folhaMundo(CHEGADA.f, CHEGADA.x + 8, CHEGADA.y + CHEGADA.h);
+    ctx.setTransform(...jac(HS, b.x, b.y));
+    ctx.fillStyle = '#1B1525'; ctx.fillRect(-1, -49, 4, 49); ctx.fillStyle = '#A6A2B2'; ctx.fillRect(0, -48, 2, 48);
+    ctx.fillStyle = '#FFD23F'; ctx.fillRect(-1, -51, 4, 3);
+    for (let i = 0; i < 22; i++) {                 // pano ondulando
+      const o = Math.round(1.5 * Math.sin(t * 6 - i * .45));
+      ctx.fillStyle = '#1B1525'; ctx.fillRect(2 + i, -48 + o, 1, 16);
+      ctx.fillStyle = (i >> 2) % 2 ? '#2BA84A' : '#92CF52'; ctx.fillRect(2 + i, -47 + o, 1, i === 21 ? 13 : 14);
+    }
+  }
+  ctx.restore();
+}
+
 // ---------- desenho ----------
-function desenha(F) {
+function desenha(F, t) {
   const W = tela.width = innerWidth * devicePixelRatio, Ht = tela.height = innerHeight * devicePixelRatio, dp = devicePixelRatio;
   const k = Math.max(W / F.w, Ht / F.h), ox = (W - F.w * k) / 2, oy = (Ht - F.h * k) / 2;
   vista = {k, ox, oy};
@@ -362,6 +434,7 @@ function desenha(F) {
   const HS = H && m3([k, 0, ox, 0, k, oy, 0, 0, 1], H), tl = p => ({x: ox + p.x * k, y: oy + p.y * k});
   const poli = (pts, cor, linha) => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); if (cor) { ctx.fillStyle = cor; ctx.fill(); } if (linha) { ctx.strokeStyle = linha; ctx.lineWidth = 2 * dp; ctx.stroke(); } };
   const ret = (f, x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]].map(([a, b]) => { const m = folhaMundo(f, a, b); return ap(HS, m.x, m.y); });
+  if (HS && est.ativo && est.rastreio) { nivel(HS, W, Ht, t); enfeites(HS, t); }
   if ($('verMasc').checked) {
     for (const m of marcas) poli(m.c.map(tl), null, '#3f6');
     if (HS && est.rastreio) {
@@ -387,7 +460,14 @@ function desenha(F) {
     for (const [cx, cy, sx, sy] of [[x, y, 1, 1], [x + m, y, -1, 1], [x, y + m, 1, -1], [x + m, y + m, -1, -1]]) { ctx.moveTo(cx + sx * l, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * l); }
     ctx.stroke();
     ctx.fillStyle = '#fff'; ctx.font = `bold ${20 * dp}px system-ui`; ctx.textAlign = 'center';
-    ctx.fillText(est.ativo ? 'Volte a mirar nos quadrados da folha' : 'Aponte para os quadrados pretos da folha', W / 2, y + m + 34 * dp); ctx.textAlign = 'start';
+    ctx.fillText(est.ativo ? 'Volte a mirar nos quadrados da placa' : 'Aponte para os quadrados pretos da placa', W / 2, y + m + 34 * dp); ctx.textAlign = 'start';
+  }
+  if (est.ativo) {                                // placar: douradas pegas
+    const pg = douradas.filter(d => d.pega).length, z = 2.4 * dp, x = W - 16 * dp, y = 16 * dp;
+    ctx.font = `bold ${18 * dp}px system-ui`; const tw = ctx.measureText(`${pg}/${douradas.length}`).width;
+    ctx.fillStyle = '#000a'; ctx.beginPath(); ctx.roundRect(x - tw - 46 * dp, y, tw + 46 * dp, 36 * dp, 18 * dp); ctx.fill();
+    ctx.imageSmoothingEnabled = false; ctx.drawImage(dourImg, 0, 0, 12, 12, x - tw - 38 * dp, y + 18 * dp - 6 * z, 12 * z, 12 * z);
+    ctx.fillStyle = '#FFE3A0'; ctx.textAlign = 'right'; ctx.fillText(`${pg}/${douradas.length}`, x - 12 * dp, y + 25 * dp); ctx.textAlign = 'start';
   }
   if (est.chegou) { ctx.fillStyle = '#2BA84A'; ctx.font = `bold ${40 * dp}px system-ui`; ctx.textAlign = 'center'; ctx.fillText('CHEGOU!', W / 2, Ht * .2); ctx.textAlign = 'start'; }
   if (HS && est.ativo && est.rastreio) {
@@ -410,7 +490,7 @@ function desenha(F) {
   }
   $('info').textContent =
     `fps ${est.fps.toFixed(0)}  det ${detMs.toFixed(0)} ms  vídeo ${F.w}×${F.h}\n` +
-    `marcas [${marcas.map(m => m.id).sort().join(',')}]  ${est.ligado ? `ligado vão ${(Ts[1].x - 424).toFixed(0)} giro ${(Ts[1].a * 57.3).toFixed(1)}°` : 'folha 2 no vão presumido'}\n` +
+    `marcas [${marcas.map(m => m.id).sort().join(',')}]  ${NF < 2 ? '' : est.ligado ? `ligado vão ${Ts.slice(1).map((T, k) => (T.x - Ts[k].x - 424).toFixed(0)).join('/')} giro ${(Ts[NF - 1].a * 57.3).toFixed(1)}°` : 'placas no vão presumido'}\n` +
     `douradas ${douradas.filter(d => d.pega).length}/${douradas.length}  quedas ${est.quedas}  mortes ${est.mortes}${est.chegou ? '  CHEGOU' : ''}`;
 }
 
@@ -428,7 +508,7 @@ function passo(dt, t) {
   if (detMs < 35 || nQuadro & 1 || !est.rastreio) { detecta(F, t); pose(t); }   // celular lento: detecta um quadro sim, outro não
   if (mudouTs()) rasteriza();
   masc.set(fixo); maoSegs = segmentosMao(); carimbaMao();
-  fisica(dt); desenha(F);
+  fisica(dt); desenha(F, t);
 }
 let tAnt = performance.now();
 function laco(now) {
@@ -482,17 +562,17 @@ $('fonte').onchange = async () => {
 Promise.all([
   fetch('be-atlas.json').then(r => r.json()),
   fetch('jornada-mapa.json').then(r => r.json()),
-  sprite.decode(),
+  sprite.decode(), dourImg.decode(), ...artes.map(im => im.decode()),
   ...MARC.ids.flat().map(id => { const im = new Image(); im.src = 'data:image/svg+xml,' + encodeURIComponent(detector.dictionary.generateSVG(id)); marcaImg[id] = im; return im.decode(); }),
 ]).then(([a, m]) => {
-  ATLAS = a; MAPA = m;
+  ATLAS = a; MAPA = m; glPrepara();
   douradas = FOLHAS.flatMap((n, f) => MAPA.folhas[n].douradas.map(d => ({f, x: d.x, y: d.y, pega: false, t: 0})));
   desenhaCena();
   const B = folhaB();
   cam.bx = cam.x = (FA.x + B.x + 424 * K) / 2; cam.by = cam.y = FA.y + 150 * K;
-  window.__J = {P, est, cam, Ts, teclas, douradas, passo, desenhaCena, cenaQuadro, folhaB, FA, K, ROT_B, GX0, GY0, C,
+  window.__J = {NF, FOLHAS, glOk: () => !!glp, P, est, cam, Ts, teclas, douradas, passo, desenhaCena, cenaQuadro, folhaB, FA, K, ROT_B, GX0, GY0, C,
     H: () => H, marcas: () => marcas, tipo: (wx, wy) => tipo((wx - GX0) / C, (wy - GY0) / C)};
-  const q = new URLSearchParams(location.search);
+  const q = QS;
   if (q.has('cam')) { $('fonte').value = 'cam'; $('fonte').onchange(); $('hud').classList.add('min'); }
   if (!q.has('pausa')) requestAnimationFrame(laco);
 });
