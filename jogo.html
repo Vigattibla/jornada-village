@@ -36,6 +36,7 @@ body.cam .t{display:none}
 <script src="vendor/cv.js"></script>
 <script src="vendor/aruco.js"></script>
 <script src="vendor/aruco_4x4_1000.js"></script>
+<script src="bloco.js"></script>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -44,15 +45,22 @@ const novo = (w, h) => Object.assign(document.createElement('canvas'), {width: w
 // marcadores ArUco 4x4 no alto de cada folha, em unidades da folha (424×300 = 280×198 mm); lado = quadrado preto
 const QS = new URLSearchParams(location.search);
 // o QR traz o mapa (?t=1,6 = lugares do percurso); a placa k (ids 3k..3k+2) só ancora o trecho k na parede
-const FOLHAS = (QS.get('t') || '1,6').split(',').map(v => Math.max(1, Math.min(12, v | 0)) - 1).slice(0, 4);
-const NF = FOLHAS.length, MARC = {lado: 84, y: 10, xs: [10, 170, 330], ids: FOLHAS.map((_, k) => [3 * k, 3 * k + 1, 3 * k + 2])};
+// ?l=N: local com blocos dourados na parede (1 marcador por bloco, ids base+k); o nível é contínuo e os blocos só localizam
+const LOCAIS = {1: {nome: 'Corredor', t: [1, 2, 3, 4, 5]}}, nL = QS.get('l');
+const LOCAL = LOCAIS[nL] ? {...LOCAIS[nL], base: 100 + 10 * (nL - 1)} : null;
+const BU = BLOCO.mm * 424 / 280 / BLOCO.miolo.s;   // unidades da folha por px do bloco
+const FOLHAS = LOCAL ? LOCAL.t.map(v => v - 1) : (QS.get('t') || '1,6').split(',').map(v => Math.max(1, Math.min(12, v | 0)) - 1).slice(0, 4);
+const NF = FOLHAS.length, MARC = LOCAL                   // bloco centrado no alto de cada trecho
+  ? {lado: BLOCO.miolo.s * BU, y: BLOCO.miolo.y * BU, xs: [212 - (BLOCO.w / 2 - BLOCO.miolo.x) * BU], ids: FOLHAS.map((_, k) => [LOCAL.base + k])}
+  : {lado: 84, y: 10, xs: [10, 170, 330], ids: FOLHAS.map((_, k) => [3 * k, 3 * k + 1, 3 * k + 2])};
 const CHEGADA = FOLHAS[NF - 1] === 11 ? {f: NF - 1, x: 338, y: 204, w: 60, h: 48, arte: true} : {f: NF - 1, x: 380, y: 204, w: 32, h: 48};
 const VAO0 = 150;                                  // vão presumido até a câmera ver as duas folhas juntas
 // mundo = unidades da folha 1; grade de colisão com célula de 2 unidades
-const C = 2, GX0 = -150, GY0 = -150, GW = Math.ceil((300 + NF * 424 + (NF - 1) * 300) / C), GH = 300, N = GW * GH;
+const C = 2, GX0 = -150, GY0 = -150, GW = Math.ceil((300 + NF * 424 + (LOCAL ? 0 : (NF - 1) * 300)) / C), GH = 300, N = GW * GH;
 const LIVRE = 0, CHAO = 1, CORPO = 2, PERIGO = 3, UM = 4;   // UM = plataforma de um sentido
 const fixo = new Uint8Array(N), masc = new Uint8Array(N);
-const Ts = FOLHAS.map((_, k) => ({a: 0, x: k * (424 + VAO0), y: 0, n: k ? 0 : 99}));   // placa -> mundo; n = quadros ligada a outra
+const Ts = FOLHAS.map((_, k) => ({a: 0, x: k * (424 + (LOCAL ? 0 : VAO0)), y: 0, n: k ? 0 : 99}));   // âncora -> mundo (medida); n = quadros ligada a outra
+const NT = LOCAL ? FOLHAS.map((_, k) => ({a: 0, x: k * 424, y: 0})) : Ts;   // trecho -> mundo: blocos = fixo e contínuo; placas = o medido
 let rasterTs = null;
 let ATLAS, MAPA, video = null, fonte = 'teste', maoIA = null, maoSegs = [], douradas = [];
 let H = null, Hi = null, tVisto = -9, marcas = [], detMs = 0, nQuadro = 0;
@@ -116,10 +124,13 @@ function rigido(src, dst) {                        // dst ≈ rotação·src + t
   const a = Math.atan2(ss, sc), c = Math.cos(a), s = Math.sin(a);
   return {a, x: bx - (c * ax - s * ay), y: by - (s * ax + c * ay)};
 }
-const folhaMundo = (f, x, y) => { const T = Ts[f], c = Math.cos(T.a), s = Math.sin(T.a); return {x: c * x - s * y + T.x, y: s * x + c * y + T.y}; };
-const mundoFolha = (f, x, y) => { const T = Ts[f], c = Math.cos(T.a), s = Math.sin(T.a), dx = x - T.x, dy = y - T.y; return {x: c * dx + s * dy, y: -s * dx + c * dy}; };
+const gira = (T, x, y) => { const c = Math.cos(T.a), s = Math.sin(T.a); return {x: c * x - s * y + T.x, y: s * x + c * y + T.y}; };
+const ancoraMundo = (f, x, y) => gira(Ts[f], x, y);
+const folhaMundo = (f, x, y) => { const T = NT[f], c = Math.cos(T.a), s = Math.sin(T.a); return {x: c * x - s * y + T.x, y: s * x + c * y + T.y}; };
+const mundoFolha = (f, x, y) => { const T = NT[f], c = Math.cos(T.a), s = Math.sin(T.a), dx = x - T.x, dy = y - T.y; return {x: c * dx + s * dy, y: -s * dx + c * dy}; };
+const ONDE = new Map(MARC.ids.flatMap((l, f) => l.map((id, j) => [id, {f, j}])));
 function cantosMarca(id) {                         // cantos do quadrado preto em unidades da folha, horário a partir do topo-esquerdo
-  const f = id / 3 | 0, x = MARC.xs[id % 3], y = MARC.y, L = MARC.lado;
+  const {f, j} = ONDE.get(id), x = MARC.xs[j], y = MARC.y, L = MARC.lado;
   return {f, p: [{x, y}, {x: x + L, y}, {x: x + L, y: y + L}, {x, y: y + L}]};
 }
 
@@ -143,12 +154,18 @@ function detecta(F, t) {
 }
 
 // ---------- pose: homografia mundo -> px do vídeo ----------
+function afim(src, dst) {                          // afim por mínimos quadrados: 1 marcador pequeno não sustenta a perspectiva de longe
+  const M = [0, 0, 0, 0, 0, 0, 0, 0, 0], bx = [0, 0, 0], by = [0, 0, 0];
+  src.forEach((p, i) => { const v = [p.x, p.y, 1]; for (let r = 0; r < 3; r++) { for (let c = 0; c < 3; c++) M[r * 3 + c] += v[r] * v[c]; bx[r] += v[r] * dst[i].x; by[r] += v[r] * dst[i].y; } });
+  const I = inv3(M), sol = b => [0, 1, 2].map(r => I[r * 3] * b[0] + I[r * 3 + 1] * b[1] + I[r * 3 + 2] * b[2]);
+  return [...sol(bx), ...sol(by), 0, 0, 1];
+}
 function liga() {                                  // placas no mesmo quadro: mede vão e giro reais a partir de uma já ligada
   const por = FOLHAS.map(() => []);
   for (const m of marcas) { const k = cantosMarca(m.id); por[k.f].push({m, k}); }
   const vis = por.map((o, f) => o.length ? f : -1).filter(f => f >= 0), ref = vis.find(f => !f || Ts[f].n >= 4);
   if (vis.length < 2 || ref === undefined) return;
-  const HA = homografia(por[ref].flatMap(o => o.k.p), por[ref].flatMap(o => o.m.c));
+  const HA = (LOCAL ? afim : homografia)(por[ref].flatMap(o => o.k.p), por[ref].flatMap(o => o.m.c));
   if (!HA) return;
   const HAi = inv3(HA), R0 = Ts[ref], c0 = Math.cos(R0.a), s0 = Math.sin(R0.a);
   for (const f of vis) if (f && f !== ref) {
@@ -167,7 +184,7 @@ function pose(t) {
   if (!marcas.length) { est.rastreio = t - tVisto < .4; return; }
   liga();
   const src = [], dst = [];
-  for (const m of marcas) { const k = cantosMarca(m.id); k.p.forEach((p, i) => { src.push(folhaMundo(k.f, p.x, p.y)); dst.push(m.c[i]); }); }
+  for (const m of marcas) { const k = cantosMarca(m.id); k.p.forEach((p, i) => { src.push(ancoraMundo(k.f, p.x, p.y)); dst.push(m.c[i]); }); }
   const Hr = homografia(src, dst);
   if (!Hr) return;
   if (!H || t - tVisto > .4) H = Hr;
@@ -180,7 +197,7 @@ function pose(t) {
   }
   Hi = inv3(H); tVisto = t; est.rastreio = true;
   if (!est.ativo) {                                // primeira vez: Bê nasce no início da folha vista
-    const f = Math.min(...marcas.map(m => cantosMarca(m.id).f)), sp = MAPA.folhas[FOLHAS[f]].spawn, w = folhaMundo(f, sp.x, sp.y);
+    const f = LOCAL ? 0 : Math.min(...marcas.map(m => cantosMarca(m.id).f)), sp = MAPA.folhas[FOLHAS[f]].spawn, w = folhaMundo(f, sp.x, sp.y);
     Object.assign(salvo, {x: (w.x - GX0) / C, y: (w.y - GY0) / C, ok: true});
     est.ativo = true; est.t0 = t; renasce();
   }
@@ -205,7 +222,7 @@ function rasteriza() {
   });
   rasterTs = Ts.map(T => ({...T}));
 }
-const mudouTs = () => !rasterTs || Ts.some((T, i) => Math.hypot(T.x - rasterTs[i].x, T.y - rasterTs[i].y) > .5 || Math.abs(T.a - rasterTs[i].a) > .002);
+const mudouTs = () => !rasterTs || !LOCAL && Ts.some((T, i) => Math.hypot(T.x - rasterTs[i].x, T.y - rasterTs[i].y) > .5 || Math.abs(T.a - rasterTs[i].a) > .002);
 
 // ---------- mão: segmentos em px do vídeo viram cápsulas CORPO no mundo ----------
 const OSSOS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17],[1,5],[0,9],[0,13]];
@@ -304,7 +321,7 @@ function fisica(dt) {
 }
 
 // ---------- cena de teste: parede com as 2 folhas impressas, câmera virtual ----------
-const K = 1.5, FA = {x: 300, y: 250}, ROT_B = .025, SW = 2400, SH = 1000;
+const K = LOCAL ? 1 : 1.5, FA = LOCAL ? {x: 150, y: 250} : {x: 300, y: 250}, ROT_B = .025, SW = 2400, SH = 1000;
 const cena = novo(SW, SH), cctx = cena.getContext('2d'), FW = 1280, FH = 720, quadro = novo(FW, FH), qctx = quadro.getContext('2d');
 const cam = {x: 0, y: 0, z: .6, r: 0}, marcaImg = [];
 const folhaB = () => ({x: FA.x + (424 + +$('vao').value) * K, y: FA.y + 6});
@@ -314,13 +331,20 @@ function desenhaFolha(g, f) {                     // placa de âncora impressa (
   MARC.ids[f].forEach((id, j) => g.drawImage(marcaImg[id], MARC.xs[j] - L / 6, MARC.y - L / 6, L * 8 / 6, L * 8 / 6));
   g.fillStyle = '#999'; g.font = 'bold 10px system-ui'; g.fillText(`JORNADA PELO VILLAGE · PLACA ${f + 1}`, 12, 121);
 }
+const blocoCena = k => ({x: FA.x + (k * 424 + [0, 14, -10, 22, 6][k % 5]) * K, y: FA.y + [0, 4, -3, 6, 1][k % 5], r: [0, .01, -.015, .02, .005][k % 5]});   // colados à mão: vão e giro imperfeitos
 function desenhaCena() {
   const g = cctx; let s = 7;
   const R = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
   g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#d8cdb9'; g.fillRect(0, 0, SW, SH);
   for (let i = 0; i < 12000; i++) { g.fillStyle = R() < .5 ? '#cdc1ab' : '#e2d8c6'; g.fillRect(R() * SW | 0, R() * SH | 0, 2 + R() * 5 | 0, 2 + R() * 5 | 0); }
   const B = folhaB();
-  [[FA, 0], [B, ROT_B]].slice(0, NF).forEach(([o, rot], f) => {
+  if (LOCAL) FOLHAS.forEach((_, k) => {
+    const o = blocoCena(k), bx = 212 - BLOCO.w / 2 * BU;
+    g.setTransform(K * Math.cos(o.r), K * Math.sin(o.r), -K * Math.sin(o.r), K * Math.cos(o.r), o.x, o.y);
+    g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(bx + 3, 4, BLOCO.w * BU, BLOCO.h * BU);
+    g.imageSmoothingEnabled = false; g.drawImage(marcaImg[MARC.ids[k][0]], bx, 0, BLOCO.w * BU, BLOCO.h * BU);
+  });
+  else [[FA, 0], [B, ROT_B]].slice(0, NF).forEach(([o, rot], f) => {
     g.setTransform(K * Math.cos(rot), K * Math.sin(rot), -K * Math.sin(rot), K * Math.cos(rot), o.x, o.y);
     g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(3, 4, 424, 130);
     desenhaFolha(g, f);
@@ -339,6 +363,8 @@ const cenaQuadro = p => { const c = Math.cos(cam.r), s = Math.sin(cam.r), dx = (
 function maoTeste() { return maoCena().map(s => ({a: cenaQuadro(s.a), b: cenaQuadro(s.b), r: s.r * cam.z})); }
 function geraQuadro(t) {
   cam.z = +$('zoom').value / 100;
+  if (LOCAL && est.ativo) cam.bx += (FA.x + Math.max(300, GX0 + P.x * C) * K - cam.bx) * .04;   // celular acompanha o Bê ao longo da parede
+  if (LOCAL && !$('balanco').checked) cam.x = cam.bx;
   if ($('balanco').checked) { cam.x = cam.bx + 120 * Math.sin(t * .7); cam.y = cam.by + 30 * Math.sin(t * 1.13); cam.r = .06 * Math.sin(t * .9); }
   const g = qctx;
   g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#000'; g.fillRect(0, 0, FW, FH);
@@ -379,7 +405,7 @@ function glPrepara() {
 }
 const revela = (f, t) => (t - est.t0 - .2 - .6 * f) * 1.4;   // varredura dourada da esquerda para a direita, placa após placa
 function nivel(HS, W, Ht, t) {
-  const Mf = f => { const T = Ts[f], c = Math.cos(T.a), s = Math.sin(T.a), M = m3(HS, [c, -s, T.x, s, c, T.y, 0, 0, 1]); return M[6] * 212 + M[7] * 150 + M[8] < 0 ? M.map(v => -v) : M; };
+  const Mf = f => { const T = NT[f], c = Math.cos(T.a), s = Math.sin(T.a), M = m3(HS, [c, -s, T.x, s, c, T.y, 0, 0, 1]); return M[6] * 212 + M[7] * 150 + M[8] < 0 ? M.map(v => -v) : M; };
   if (!glp) {                                      // sem WebGL: afim pelo centro da placa
     ctx.save(); ctx.imageSmoothingEnabled = false;
     FOLHAS.forEach((n, f) => {
@@ -460,7 +486,7 @@ function desenha(F, t) {
     for (const [cx, cy, sx, sy] of [[x, y, 1, 1], [x + m, y, -1, 1], [x, y + m, 1, -1], [x + m, y + m, -1, -1]]) { ctx.moveTo(cx + sx * l, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * l); }
     ctx.stroke();
     ctx.fillStyle = '#fff'; ctx.font = `bold ${20 * dp}px system-ui`; ctx.textAlign = 'center';
-    ctx.fillText(est.ativo ? 'Volte a mirar nos quadrados da placa' : 'Aponte para os quadrados pretos da placa', W / 2, y + m + 34 * dp); ctx.textAlign = 'start';
+    ctx.fillText(est.ativo ? `Volte a mirar ${LOCAL ? 'nos blocos dourados' : 'nos quadrados da placa'}` : `Aponte para ${LOCAL ? 'o bloco dourado 1' : 'os quadrados pretos da placa'}`, W / 2, y + m + 34 * dp); ctx.textAlign = 'start';
   }
   if (est.ativo) {                                // placar: douradas pegas
     const pg = douradas.filter(d => d.pega).length, z = 2.4 * dp, x = W - 16 * dp, y = 16 * dp;
@@ -563,14 +589,15 @@ Promise.all([
   fetch('be-atlas.json').then(r => r.json()),
   fetch('jornada-mapa.json').then(r => r.json()),
   sprite.decode(), dourImg.decode(), ...artes.map(im => im.decode()),
-  ...MARC.ids.flat().map(id => { const im = new Image(); im.src = 'data:image/svg+xml,' + encodeURIComponent(detector.dictionary.generateSVG(id)); marcaImg[id] = im; return im.decode(); }),
+  ...MARC.ids.flat().map((id, k) => { const im = new Image(); im.src = 'data:image/svg+xml,' + encodeURIComponent(LOCAL ? blocoSVG(detector.dictionary, id, k + 1) : detector.dictionary.generateSVG(id)); marcaImg[id] = im; return im.decode(); }),
 ]).then(([a, m]) => {
   ATLAS = a; MAPA = m; glPrepara();
   douradas = FOLHAS.flatMap((n, f) => MAPA.folhas[n].douradas.map(d => ({f, x: d.x, y: d.y, pega: false, t: 0})));
   desenhaCena();
   const B = folhaB();
-  cam.bx = cam.x = (FA.x + B.x + 424 * K) / 2; cam.by = cam.y = FA.y + 150 * K;
-  window.__J = {NF, FOLHAS, glOk: () => !!glp, P, est, cam, Ts, teclas, douradas, passo, desenhaCena, cenaQuadro, folhaB, FA, K, ROT_B, GX0, GY0, C,
+  if (LOCAL) $('zoom').value = 100;               // celular a ~60 cm da parede
+  cam.bx = cam.x = LOCAL ? FA.x + 300 * K : (FA.x + B.x + 424 * K) / 2; cam.by = cam.y = FA.y + 150 * K;
+  window.__J = {NF, FOLHAS, LOCAL, NT, blocoCena, glOk: () => !!glp, P, est, cam, Ts, teclas, douradas, passo, desenhaCena, cenaQuadro, folhaB, FA, K, ROT_B, GX0, GY0, C,
     H: () => H, marcas: () => marcas, tipo: (wx, wy) => tipo((wx - GX0) / C, (wy - GY0) / C)};
   const q = QS;
   if (q.has('cam')) { $('fonte').value = 'cam'; $('fonte').onchange(); $('hud').classList.add('min'); }
