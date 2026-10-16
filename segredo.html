@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="theme-color" content="#1B1525">
+<title>O Segredo do Village</title>
+<style>
+html,body{margin:0;height:100%;background:#1B1525;color:#FFF8E8;font:16px system-ui,sans-serif;overflow:hidden;touch-action:none;user-select:none}
+#tela{position:fixed;inset:0;width:100%;height:100%}
+.cartao{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:#1B1525e6;z-index:3}
+.cartao>div{max-width:360px;background:#FFF3D6;color:#3B2410;border:4px solid #633806;outline:3px solid #EF9F27;border-radius:6px;padding:22px 20px;box-shadow:0 10px 40px #000a;text-align:center}
+.cartao small{display:block;letter-spacing:3px;font-weight:700;color:#B86E12;font-size:12px}
+.cartao h1{margin:6px 0 12px;font-size:25px;line-height:1.15}
+.cartao p{margin:0 0 10px;line-height:1.45}
+.cartao button{margin-top:8px;border:3px solid #633806;border-radius:6px;background:#EF9F27;color:#1B1525;font:bold 18px system-ui;padding:12px 20px;box-shadow:0 4px 0 #633806}
+.cartao button:active{transform:translateY(3px);box-shadow:0 1px 0 #633806}
+.selo{width:56px;height:56px;margin:0 auto 6px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#FAC775,#EF9F27 45%,#B86E12);border:3px solid #633806;display:flex;align-items:center;justify-content:center;font:bold 26px Georgia,serif;color:#633806}
+#dica{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#000b;border:2px solid #EF9F27;border-radius:22px;padding:10px 16px;font-weight:600;white-space:nowrap;display:none;z-index:2}
+#balao{position:fixed;left:0;top:0;max-width:260px;background:#FFF8E8;color:#1B1525;border:3px solid #1B1525;border-radius:10px;padding:10px 12px 18px;font:600 16px/1.35 system-ui;display:none;z-index:2;box-shadow:0 4px 0 #0005}
+#balao::after{content:'';position:absolute;left:var(--rabo,50%);bottom:-12px;margin-left:-9px;border:9px solid transparent;border-top-color:#1B1525;border-bottom:0}
+#balao i{position:absolute;right:8px;bottom:3px;font-size:11px;font-style:normal;color:#B86E12;animation:pisca 1s infinite}
+@keyframes pisca{50%{opacity:.2}}
+.oculto{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="tela"></canvas>
+<div id="abre" class="cartao"><div>
+  <div class="selo">?</div>
+  <small>BILHETE MISTERIOSO</small>
+  <h1>Um segredo foi escondido no Village</h1>
+  <p>Só quem tem este bilhete pode descobrir onde ele está.</p>
+  <p>Vá até a <b>parede da entrada da recepção</b>, encontre o <b>quadro dourado com a porta</b> e aponte a câmera para ele.</p>
+  <button id="bComeca">Abrir a câmera</button>
+  <p id="erro" style="color:#a3261b;font-size:14px;margin-top:10px"></p>
+</div></div>
+<div id="fim" class="cartao oculto"><div>
+  <div class="selo">★</div>
+  <small>SEGREDO REVELADO</small>
+  <h1>O baú dourado está escondido no resort</h1>
+  <p>Guarde o seu bilhete: a primeira pista aparece em breve.</p>
+  <button id="bDeNovo">Ver de novo</button>
+</div></div>
+<div id="dica">Aponte para o quadro dourado</div>
+<div id="balao"><span id="fala"></span><i>toque ▸</i></div>
+<script src="vendor/cv.js"></script>
+<script src="vendor/aruco.js"></script>
+<script src="vendor/aruco_4x4_1000.js"></script>
+<script src="quadro.js"></script>
+<script>
+'use strict';
+// prólogo da caça ao tesouro: o bilhete (QR) abre esta página; o quadro 3×3 da recepção ancora a porta e o Bê conta o segredo
+const FALAS = [                                    // texto provisório: editar aqui
+  'Psiu! Aqui! Você achou o bilhete!',
+  'Eu sou o Bê, e guardo um segredo do Village…',
+  'Em algum lugar do resort tem um baú dourado escondido.',
+  'Ele só abre pra quem seguir todas as pistas.',
+  'Fica de olho: a primeira pista aparece em breve!',
+];
+const $ = id => document.getElementById(id), QS = new URLSearchParams(location.search), TESTE = QS.has('teste');
+const tela = $('tela'), ctx = tela.getContext('2d'), novo = (w, h) => Object.assign(document.createElement('canvas'), {width: w, height: h});
+const detector = new AR.Detector({dictionaryName: 'ARUCO_4X4_1000', maxHammingDistance: 0});
+const CELS = quadroCelulas(), VALIDOS = new Set(CELS.map(c => c.id)), SEGURA = 1;
+const PORTA = {x: QUADRO.borda + QUADRO.cel + 22, y: QUADRO.borda + QUADRO.cel + 22}, PISO = QUADRO.lado - 2;
+const imagem = src => Object.assign(new Image(), {src});
+const sprite = imagem('be-spritesheet.png'), folha = imagem('folha-dourada.png'), porta = imagem('data:image/svg+xml,' + encodeURIComponent(portaSVG()));
+const quadroImg = imagem('data:image/svg+xml,' + encodeURIComponent(quadroSVG(detector.dictionary)));
+let ATLAS, video = null, H = null, Hs = null, tVisto = -9, marcas = [], rastreio = false, nQ = 0;
+const S = {t: 0, tc: 0, fala: -1, letras: 0, festa: -1, fim: false, part: []};   // tc = tempo da cena (só corre com o quadro à vista)
+
+// ---------- álgebra (mesma do jogo) ----------
+const m3 = (a, b) => [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => { const r = i / 3 | 0, c = i % 3; return a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c]; });
+function inv3(m) {
+  const [a, b, c, d, e, f, g, h, i] = m, A = e * i - f * h, B = f * g - d * i, K = d * h - e * g, det = a * A + b * B + c * K;
+  return [A, c * h - b * i, b * f - c * e, B, a * i - c * g, c * d - a * f, K, b * g - a * h, a * e - b * d].map(v => v / det);
+}
+const ap = (m, x, y) => { const w = m[6] * x + m[7] * y + m[8]; return {x: (m[0] * x + m[1] * y + m[2]) / w, y: (m[3] * x + m[4] * y + m[5]) / w}; };
+function normaliza(p) {
+  let cx = 0, cy = 0, d = 0;
+  for (const q of p) { cx += q.x; cy += q.y; }
+  cx /= p.length; cy /= p.length;
+  for (const q of p) d += Math.hypot(q.x - cx, q.y - cy);
+  const s = Math.SQRT2 / (d / p.length || 1);
+  return [s, 0, -s * cx, 0, s, -s * cy, 0, 0, 1];
+}
+function resolve(M, v, n) {
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r * n + c]) > Math.abs(M[p * n + c])) p = r;
+    if (Math.abs(M[p * n + c]) < 1e-12) return null;
+    if (p !== c) { for (let k = 0; k < n; k++) [M[c * n + k], M[p * n + k]] = [M[p * n + k], M[c * n + k]]; [v[c], v[p]] = [v[p], v[c]]; }
+    for (let r = c + 1; r < n; r++) { const f = M[r * n + c] / M[c * n + c]; for (let k = c; k < n; k++) M[r * n + k] -= f * M[c * n + k]; v[r] -= f * v[c]; }
+  }
+  const x = new Array(n);
+  for (let r = n - 1; r >= 0; r--) { let s = v[r]; for (let k = r + 1; k < n; k++) s -= M[r * n + k] * x[k]; x[r] = s / M[r * n + r]; }
+  return x;
+}
+function homografia(src, dst) {
+  const Ta = normaliza(src), Tb = normaliza(dst), M = new Float64Array(64), v = new Float64Array(8);
+  for (let i = 0; i < src.length; i++) {
+    const a = ap(Ta, src[i].x, src[i].y), b = ap(Tb, dst[i].x, dst[i].y);
+    for (const [r, t] of [[[a.x, a.y, 1, 0, 0, 0, -b.x * a.x, -b.x * a.y], b.x], [[0, 0, 0, a.x, a.y, 1, -b.y * a.x, -b.y * a.y], b.y]])
+      for (let j = 0; j < 8; j++) { v[j] += r[j] * t; for (let k = 0; k < 8; k++) M[j * 8 + k] += r[j] * r[k]; }
+  }
+  const h = resolve(M, v, 8);
+  if (!h) return null;
+  const R = m3(inv3(Tb), m3([...h, 1], Ta));
+  return R.map(x => x / R[8]);
+}
+
+// ---------- fonte: câmera ou cena de teste (quadro balançando numa parede) ----------
+const teste = novo(1280, 720), tctx = teste.getContext('2d');
+function cenaTeste(t) {
+  tctx.setTransform(1, 0, 0, 1, 0, 0); tctx.fillStyle = '#d8c9ad'; tctx.fillRect(0, 0, 1280, 720);
+  tctx.fillStyle = '#cbb995'; for (let y = 0; y < 720; y += 48) tctx.fillRect(0, y, 1280, 2);
+  const k = 2.3 + .3 * Math.sin(t * .4), a = .07 * Math.sin(t * .6);
+  tctx.setTransform(k * Math.cos(a), k * Math.sin(a), -k * Math.sin(a), k * Math.cos(a), 640 + 60 * Math.sin(t * .5), 360 + 25 * Math.sin(t * .7));
+  tctx.imageSmoothingEnabled = false; tctx.drawImage(quadroImg, -72, -72);
+  return {img: teste, w: 1280, h: 720};
+}
+const fonteAtual = t => TESTE ? cenaTeste(t) : video && video.readyState >= 2 ? {img: video, w: video.videoWidth, h: video.videoHeight} : null;
+
+// ---------- detecção e pose ----------
+const dcan = novo(2, 2), dctx = dcan.getContext('2d', {willReadFrequently: true});
+function detecta(F, t) {
+  const lim = t - tVisto > .5 && nQ & 1 ? 1600 : 960, f = Math.min(1, lim / Math.max(F.w, F.h)), w = Math.round(F.w * f), h = Math.round(F.h * f);
+  if (dcan.width !== w || dcan.height !== h) { dcan.width = w; dcan.height = h; }
+  dctx.drawImage(F.img, 0, 0, w, h);
+  const por = new Map();
+  for (const m of detector.detect(dctx.getImageData(0, 0, w, h))) if (VALIDOS.has(m.id) && !por.has(m.id)) por.set(m.id, {id: m.id, c: m.corners.map(p => ({x: p.x / f, y: p.y / f}))});
+  marcas = [...por.values()];
+}
+function pose(t) {
+  if (!marcas.length) { rastreio = t - tVisto < SEGURA; return; }
+  const src = [], dst = [];
+  for (const m of marcas) quadroCantos(m.id).forEach((p, i) => { src.push(p); dst.push(m.c[i]); });
+  const Hr = homografia(src, dst);
+  if (!Hr) return;
+  if (!H || t - tVisto > SEGURA) H = Hr;
+  else {                                           // suaviza tremor; movimento grande passa direto
+    let err = 0;
+    for (const [x, y] of [[72, 72], [20, 20], [124, 124]]) { const a = ap(H, x, y), b = ap(Hr, x, y); err = Math.max(err, Math.hypot(a.x - b.x, a.y - b.y)); }
+    const al = Math.min(1, .2 + (err / 10) ** 2);
+    H = H.map((v, i) => v + (Hr[i] - v) * al);
+  }
+  tVisto = t; rastreio = true;
+}
+function em(x, y) {                                // transformação afim local do quadro (px) para a tela em (x, y)
+  const p = ap(Hs, x, y), a = ap(Hs, x + 1, y), b = ap(Hs, x, y + 1);
+  ctx.setTransform(a.x - p.x, a.y - p.y, b.x - p.x, b.y - p.y, p.x, p.y);
+  return Math.hypot(a.x - p.x, a.y - p.y);
+}
+
+// ---------- cena: porta brilha, abre, o Bê pula pra fora e conta o segredo ----------
+const T = {abre: 1.4, sai: 2.4, pulo: 3.0, pousa: 3.9, fala: 4.3};
+const suave = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);
+function quadroAnim(nome, t) {
+  const a = ATLAS.animations[nome], n = a.frames.length, i = a.loop ? Math.floor(t * a.fps) % n : Math.min(n - 1, Math.floor(t * a.fps));
+  return a.frames[i];
+}
+function be(tc) {                                  // posição (px do quadro), escala e animação do Bê
+  if (tc < T.sai) return null;
+  if (tc < T.pulo) return {x: PORTA.x, y: PORTA.y + 18, s: .5, al: suave((tc - T.sai) / .4), fr: quadroAnim('idle', tc)};
+  if (tc < T.pousa) {
+    const u = (tc - T.pulo) / (T.pousa - T.pulo), y0 = PORTA.y + 18;
+    return {x: PORTA.x, y: y0 + (PISO - y0) * u - 46 * 4 * u * (1 - u), s: .5 + .5 * suave(u), al: 1, fr: quadroAnim(u < .5 ? 'jump' : 'fall', tc)};
+  }
+  if (tc < T.fala) return {x: PORTA.x, y: PISO, s: 1, al: 1, fr: quadroAnim('land', tc - T.pousa)};
+  return {x: PORTA.x, y: PISO, s: 1, al: 1, fr: S.festa >= 0 ? quadroAnim('win', S.t - S.festa) : quadroAnim('idle', tc)};
+}
+function folhas(n) {
+  for (let i = 0; i < n; i++) S.part.push({x: PORTA.x, y: PORTA.y + 6, vx: (Math.random() - .5) * 90, vy: -60 - Math.random() * 70, f: Math.random() * 8, v: 0});
+}
+function desenhaPorta(tc, k) {
+  const u = suave((tc - T.abre) / (T.sai - T.abre));
+  em(PORTA.x, PORTA.y); ctx.translate(-22, -22);
+  if (u > 0) {                                     // vão escuro com luz quente, e a folha da porta girando na dobradiça
+    ctx.beginPath();
+    for (const [x, t] of portaArco(12, 10, 34)) ctx.rect(x, t, 1.05, 40 - t);
+    ctx.save(); ctx.clip();
+    ctx.fillStyle = '#1B1525'; ctx.fillRect(10, 8, 24, 32);
+    const g = ctx.createRadialGradient(22, 30, 1, 22, 30, 20);
+    g.addColorStop(0, `rgba(255,214,120,${.95 * u})`); g.addColorStop(1, 'rgba(239,159,39,0)');
+    ctx.fillStyle = g; ctx.fillRect(10, 8, 24, 32);
+    ctx.restore();
+  }
+  ctx.save(); ctx.translate(10, 0); ctx.scale(1 - .88 * u, 1); ctx.translate(-10, 0);
+  ctx.drawImage(porta, 0, 0, 44, 44);
+  if (u > 0) { ctx.fillStyle = `rgba(27,21,37,${.45 * u})`; ctx.fillRect(10, 8, 24, 32); }
+  ctx.restore();
+  if (tc < T.sai) {                                // brilho da fechadura e faíscas
+    const b = suave(tc / .6) * (1 - suave((tc - T.abre) / .8)), r = 5 + 2 * Math.sin(tc * 9);
+    const g = ctx.createRadialGradient(22, 25, 0, 22, 25, r * 2.2);
+    g.addColorStop(0, `rgba(255,240,170,${b})`); g.addColorStop(1, 'rgba(255,200,80,0)');
+    ctx.fillStyle = g; ctx.fillRect(22 - r * 2.2, 25 - r * 2.2, r * 4.4, r * 4.4);
+    ctx.fillStyle = `rgba(250,199,117,${b})`;
+    for (let i = 0; i < 10; i++) { const a = i * 2.4 + tc * 1.7, d = 14 + 6 * Math.sin(tc * 3 + i); if (Math.sin(tc * 7 + i * 3) > .2) ctx.fillRect(22 + Math.cos(a) * d, 24 + Math.sin(a) * d * .9, 1.5, 1.5); }
+  }
+}
+function desenhaBe(b) {
+  em(b.x, b.y); ctx.globalAlpha = b.al;
+  ctx.drawImage(sprite, b.fr.x, b.fr.y, b.fr.w, b.fr.h, -20 * b.s, -56 * b.s, 40 * b.s, 58 * b.s);
+  ctx.globalAlpha = 1;
+}
+function balao(b) {
+  const el = $('balao');
+  if (!b || S.fala < 0 || S.fala >= FALAS.length || !rastreio) { el.style.display = 'none'; return; }
+  const txt = FALAS[S.fala], n = Math.min(txt.length, S.letras | 0), dp = devicePixelRatio;
+  $('fala').textContent = txt.slice(0, n); el.querySelector('i').style.visibility = n >= txt.length ? 'visible' : 'hidden';
+  el.style.display = 'block';
+  const p = ap(Hs, b.x, b.y - 60 * b.s), w = el.offsetWidth, h = el.offsetHeight, x = Math.max(10, Math.min(innerWidth - w - 10, p.x / dp - w / 2));
+  el.style.transform = `translate(${x}px,${Math.max(10, p.y / dp - h - 14)}px)`;
+  el.style.setProperty('--rabo', Math.max(16, Math.min(w - 16, p.x / dp - x)) + 'px');
+}
+function avanca() {
+  if (S.fala < 0 || S.festa >= 0) return;
+  const txt = FALAS[S.fala];
+  if (S.letras < txt.length) { S.letras = txt.length; return; }
+  if (++S.fala < FALAS.length) { S.letras = 0; return; }
+  S.festa = S.t; folhas(28);
+  try { localStorage.setItem('segredo-village', JSON.stringify({prologo: 1, quando: Date.now()})); } catch (e) {}
+}
+
+function passo(dt) {
+  S.t += dt; nQ++;
+  const W = tela.width, Hh = tela.height, F = fonteAtual(S.t);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#1B1525'; ctx.fillRect(0, 0, W, Hh);
+  if (!F || !F.w) return;
+  const k = Math.max(W / F.w, Hh / F.h), ox = (W - F.w * k) / 2, oy = (Hh - F.h * k) / 2;
+  ctx.drawImage(F.img, ox, oy, F.w * k, F.h * k);
+  detecta(F, S.t); pose(S.t);
+  $('dica').style.display = rastreio || S.fim ? 'none' : 'block';
+  if (!H || !rastreio) { balao(null); return; }
+  Hs = m3([k, 0, ox, 0, k, oy, 0, 0, 1], H);
+  S.tc += dt;
+  if (S.fala < 0 && S.tc >= T.fala) { S.fala = 0; S.letras = 0; }
+  if (S.fala >= 0 && S.fala < FALAS.length) S.letras += dt * 32;
+  ctx.imageSmoothingEnabled = false;
+  desenhaPorta(S.tc, k);
+  const b = be(S.tc);
+  if (b) desenhaBe(b);
+  if (S.part.length) {                             // folhas douradas da comemoração
+    em(0, 0);
+    for (const q of S.part) { q.vy += 120 * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.f += dt * 12; ctx.drawImage(folha, (q.f % 8 | 0) * 12, 0, 12, 12, q.x - 4, q.y - 4, 8, 8); }
+    S.part = S.part.filter(q => q.y < QUADRO.lado + 60);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  balao(b);
+  if (S.festa >= 0 && S.t - S.festa > 2.6 && !S.fim) { S.fim = true; $('fim').classList.remove('oculto'); }
+}
+function ajustaTela() { tela.width = Math.round(innerWidth * devicePixelRatio); tela.height = Math.round(innerHeight * devicePixelRatio); }
+addEventListener('resize', ajustaTela); ajustaTela();
+let ult = 0;
+function laco(ts) { const dt = Math.min(.1, (ts - ult) / 1000 || 0); ult = ts; passo(dt); requestAnimationFrame(laco); }
+tela.addEventListener('pointerdown', avanca);
+$('balao').addEventListener('pointerdown', avanca);
+$('bDeNovo').onclick = () => { Object.assign(S, {tc: 0, fala: -1, letras: 0, festa: -1, fim: false, part: []}); $('fim').classList.add('oculto'); };
+$('bComeca').onclick = async () => {
+  if (!TESTE) try {
+    const st = await navigator.mediaDevices.getUserMedia({video: {facingMode: {ideal: 'environment'}, width: {ideal: 1920}, height: {ideal: 1080}}, audio: false});
+    st.getVideoTracks()[0].applyConstraints({advanced: [{focusMode: 'continuous'}]}).catch(() => {});
+    video = Object.assign(document.createElement('video'), {playsInline: true, muted: true, srcObject: st});
+    await video.play();
+  } catch (err) { $('erro').textContent = 'Não deu para abrir a câmera. Permita o acesso à câmera no navegador e tente de novo.'; return; }
+  $('abre').classList.add('oculto');
+};
+Promise.all([fetch('be-atlas.json').then(r => r.json()), ...[sprite, folha, porta, quadroImg].map(im => im.decode())]).then(([a]) => {
+  ATLAS = a;
+  window.__S = {S, passo, rastreio: () => rastreio, marcas: () => marcas, H: () => H, avanca, FALAS};
+  if (!QS.has('pausa')) requestAnimationFrame(laco);
+});
+</script>
+</body>
+</html>
