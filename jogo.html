@@ -16,6 +16,17 @@ html,body{margin:0;height:100%;background:#111;color:#eee;font:13px system-ui,sa
 body.cam .t{display:none}
 #ctl{position:fixed;bottom:14px;left:0;right:0;display:flex;justify-content:space-between;padding:0 14px;pointer-events:none}
 #ctl button{pointer-events:auto;width:72px;height:72px;border-radius:50%;border:2px solid #fff8;background:#0007;color:#fff;font-size:26px;touch-action:none}
+#xrui{position:fixed;inset:0;pointer-events:none}
+#xr2d,#xrtopo{display:none}
+#xr2d{position:absolute;inset:0;width:100%;height:100%}
+#xrtopo{position:absolute;top:10px;left:10px;gap:8px}
+#xrtopo button,#bAR{pointer-events:auto;border:2px solid #fff8;border-radius:22px;background:#0009;color:#fff;font:bold 15px system-ui;padding:9px 14px}
+#bAR{display:none;position:fixed;left:50%;bottom:110px;transform:translateX(-50%);background:#F2C230;color:#1B1525;border-color:#fff;font-size:19px;padding:14px 22px}
+#bAR.ok{display:block}
+body.xr{background:transparent}
+body.xr #tela,body.xr #hud,body.xr #bAR{display:none}
+body.xr #xr2d{display:block}
+body.xr #xrtopo{display:flex}
 </style>
 </head>
 <body>
@@ -32,7 +43,9 @@ body.cam .t{display:none}
   <label class="t"><input id="balanco" type="checkbox"> balanço do celular</label>
   <small style="display:block;margin-top:4px">toque = soltar Bê · arrastar = mover celular (teste) · ← → espaço</small>
 </div>
-<div id="ctl"><div><button id="bE">◀</button> <button id="bD">▶</button></div><button id="bP">▲</button></div>
+<div id="xrui"><canvas id="xr2d"></canvas><div id="xrtopo"><button id="bSai">✕ sair</button><button id="bRe">⟲ gravar de novo</button></div>
+<div id="ctl"><div><button id="bE">◀</button> <button id="bD">▶</button></div><button id="bP">▲</button></div></div>
+<button id="bAR">▶ Jogar em AR</button>
 <script src="vendor/cv.js"></script>
 <script src="vendor/aruco.js"></script>
 <script src="vendor/aruco_4x4_1000.js"></script>
@@ -202,11 +215,12 @@ function pose(t) {
     H = H.map((v, i) => v + (Hr[i] - v) * al);
   }
   Hi = inv3(H); tVisto = t; est.rastreio = true;
-  if (!est.ativo) {                                // primeira vez: Bê nasce no início da folha vista
-    const f = LOCAL ? 0 : Math.min(...marcas.map(m => cantosMarca(m.id).f)), sp = MAPA.folhas[FOLHAS[f]].spawn, w = folhaMundo(f, sp.x, sp.y);
-    Object.assign(salvo, {x: (w.x - GX0) / C, y: (w.y - GY0) / C, ok: true});
-    est.ativo = true; est.t0 = t; renasce();
-  }
+  if (!est.ativo) comeca(t, LOCAL ? 0 : Math.min(...marcas.map(m => cantosMarca(m.id).f)));   // primeira vez: Bê nasce no início da folha vista
+}
+function comeca(t, f) {
+  const sp = MAPA.folhas[FOLHAS[f]].spawn, w = folhaMundo(f, sp.x, sp.y);
+  Object.assign(salvo, {x: (w.x - GX0) / C, y: (w.y - GY0) / C, ok: true});
+  est.ativo = true; est.t0 = t; renasce();
 }
 
 // ---------- colisão do mapa (impresso) no mundo ----------
@@ -385,38 +399,54 @@ const arte = n => `folhas/ar/folha-${String(n + 1).padStart(2, '0')}.png`;
 const artes = FOLHAS.map(n => Object.assign(new Image(), {src: arte(n)})), dourImg = Object.assign(new Image(), {src: 'folha-dourada.png'});
 const colunas = m => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
 let glp = null;
+const bandCan = novo(26, 54), bandCtx = bandCan.getContext('2d');
 function glPrepara() {
   if (!gl) return;
   const sh = (tp, src) => { const o = gl.createShader(tp); gl.shaderSource(o, src); gl.compileShader(o); return o; }, p = gl.createProgram();
-  gl.attachShader(p, sh(gl.VERTEX_SHADER, `attribute vec2 uv; uniform mat3 M; uniform vec2 tam; varying vec2 v;
-    void main() { vec3 q = M * vec3(uv * vec2(424., 300.), 1.); v = uv; gl_Position = vec4(2. * q.x / tam.x - q.z, q.z - 2. * q.y / tam.y, 0., q.z); }`));
-  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, `precision mediump float; uniform sampler2D tx; uniform float rev, sombra; varying vec2 v;
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, `attribute vec2 uv; uniform mat3 M; uniform vec2 tam; uniform vec4 ret, uvr; varying vec2 v;
+    void main() { vec3 q = M * vec3(ret.xy + uv * ret.zw, 1.); v = uvr.xy + uv * uvr.zw; gl_Position = vec4(2. * q.x / tam.x - q.z, q.z - 2. * q.y / tam.y, 0., q.z); }`));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, `precision mediump float; uniform sampler2D tx; uniform float rev, sombra, alfa; varying vec2 v;
     void main() { vec4 c = texture2D(tx, v); float d = rev - v.x * 1.15;
       if (d < 0. || c.a < .01) discard;
-      if (sombra > 0.) { gl_FragColor = vec4(0., 0., 0., c.a * sombra); return; }
-      gl_FragColor = vec4(c.rgb + smoothstep(.15, 0., d) * vec3(1., .8, .3) * c.a, c.a); }`));
-  gl.linkProgram(p);
+      if (sombra > 0.) { gl_FragColor = vec4(0., 0., 0., c.a * sombra * alfa); return; }
+      gl_FragColor = vec4(c.rgb + smoothstep(.15, 0., d) * vec3(1., .8, .3) * c.a, c.a) * alfa; }`));
+  gl.bindAttribLocation(p, 0, 'uv'); gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { console.warn('camada AR', gl.getProgramInfoLog(p)); return; }
   gl.useProgram(p);
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
-  const uv = gl.getAttribLocation(p, 'uv'); gl.enableVertexAttribArray(uv); gl.vertexAttribPointer(uv, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-  const tex = artes.map(im => {
+  const textura = im => {
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, im);
     for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
     return t;
+  };
+  const u = n => gl.getUniformLocation(p, n);
+  glp = {p, tex: artes.map(textura), be: textura(sprite), dour: textura(dourImg), band: textura(bandCan), textura,
+    M: u('M'), tam: u('tam'), rev: u('rev'), sombra: u('sombra'), alfa: u('alfa'), ret: u('ret'), uvr: u('uvr')};
+}
+function quad(M, tx, ret, uvr, rev = 99, sombra = 0, alfa = 1) {   // retângulo do mundo (ret) com recorte da textura (uvr, 0..1)
+  gl.bindTexture(gl.TEXTURE_2D, tx); gl.uniformMatrix3fv(glp.M, false, colunas(M));
+  gl.uniform4f(glp.ret, ...ret); gl.uniform4f(glp.uvr, ...uvr); gl.uniform1f(glp.rev, rev); gl.uniform1f(glp.sombra, sombra); gl.uniform1f(glp.alfa, alfa);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+const Mf = (HS, f) => { const T = NT[f], c = Math.cos(T.a), s = Math.sin(T.a), M = m3(HS, [c, -s, T.x, s, c, T.y, 0, 0, 1]); return fonte !== 'xr' && M[6] * 212 + M[7] * 150 + M[8] < 0 ? M.map(v => -v) : M; };   // XR: sinal é físico (atrás da câmera)
+function folhasGL(HS, t) {                         // placas do caminho com sombra e varredura dourada
+  FOLHAS.forEach((n, f) => {
+    const rev = revela(f, t);
+    if (rev <= 0) return;
+    const M = Mf(HS, f), R = [0, 0, 424, 300], U = [0, 0, 1, 1];
+    quad(m3(M, [1, 0, 2.5, 0, 1, 3.5, 0, 0, 1]), glp.tex[f], R, U, rev, .22); quad(M, glp.tex[f], R, U, rev);
   });
-  glp = {tex, M: gl.getUniformLocation(p, 'M'), tam: gl.getUniformLocation(p, 'tam'), rev: gl.getUniformLocation(p, 'rev'), sombra: gl.getUniformLocation(p, 'sombra')};
 }
 const revela = (f, t) => (t - est.t0 - .2 - .6 * f) * 1.4;   // varredura dourada da esquerda para a direita, placa após placa
 function nivel(HS, W, Ht, t) {
-  const Mf = f => { const T = NT[f], c = Math.cos(T.a), s = Math.sin(T.a), M = m3(HS, [c, -s, T.x, s, c, T.y, 0, 0, 1]); return M[6] * 212 + M[7] * 150 + M[8] < 0 ? M.map(v => -v) : M; };
   if (!glp) {                                      // sem WebGL: afim pelo centro da placa
     ctx.save(); ctx.imageSmoothingEnabled = false;
     FOLHAS.forEach((n, f) => {
       if (revela(f, t) <= 0) return;
-      const M = Mf(f), q = (x, y) => ap(M, x, y), o = q(212, 150), a = q(222, 150), b = q(212, 160), ex = [(a.x - o.x) / 10, (a.y - o.y) / 10], ey = [(b.x - o.x) / 10, (b.y - o.y) / 10];
+      const M = Mf(HS, f), q = (x, y) => ap(M, x, y), o = q(212, 150), a = q(222, 150), b = q(212, 160), ex = [(a.x - o.x) / 10, (a.y - o.y) / 10], ey = [(b.x - o.x) / 10, (b.y - o.y) / 10];
       ctx.setTransform(ex[0], ex[1], ey[0], ey[1], o.x - 212 * ex[0] - 150 * ey[0], o.y - 212 * ex[1] - 150 * ey[1]);
       ctx.drawImage(artes[f], 0, 0);
     });
@@ -424,14 +454,7 @@ function nivel(HS, W, Ht, t) {
   }
   if (glc.width !== W || glc.height !== Ht) { glc.width = W; glc.height = Ht; }
   gl.viewport(0, 0, W, Ht); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.uniform2f(glp.tam, W, Ht);
-  FOLHAS.forEach((n, f) => {
-    const rev = revela(f, t);
-    if (rev <= 0) return;
-    const M = Mf(f);
-    gl.bindTexture(gl.TEXTURE_2D, glp.tex[f]); gl.uniform1f(glp.rev, rev);
-    gl.uniform1f(glp.sombra, .22); gl.uniformMatrix3fv(glp.M, false, colunas(m3(M, [1, 0, 2.5, 0, 1, 3.5, 0, 0, 1]))); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    gl.uniform1f(glp.sombra, 0); gl.uniformMatrix3fv(glp.M, false, colunas(M)); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-  });
+  folhasGL(HS, t);
   ctx.drawImage(glc, 0, 0);
 }
 const jac = (HS, wx, wy) => { const o = ap(HS, wx, wy), a = ap(HS, wx + 10, wy), b = ap(HS, wx, wy + 10); return [(a.x - o.x) / 10, (a.y - o.y) / 10, (b.x - o.x) / 10, (b.y - o.y) / 10, o.x, o.y]; };
@@ -444,19 +467,43 @@ function enfeites(HS, t) {                         // douradas girando e bandeir
   });
   if (!CHEGADA.arte && revela(CHEGADA.f, t) > 1.4) {
     const b = folhaMundo(CHEGADA.f, CHEGADA.x + 8, CHEGADA.y + CHEGADA.h);
-    ctx.setTransform(...jac(HS, b.x, b.y));
-    ctx.fillStyle = '#1B1525'; ctx.fillRect(-1, -49, 4, 49); ctx.fillStyle = '#A6A2B2'; ctx.fillRect(0, -48, 2, 48);
-    ctx.fillStyle = '#FFD23F'; ctx.fillRect(-1, -51, 4, 3);
-    for (let i = 0; i < 22; i++) {                 // pano ondulando
-      const o = Math.round(1.5 * Math.sin(t * 6 - i * .45));
-      ctx.fillStyle = '#1B1525'; ctx.fillRect(2 + i, -48 + o, 1, 16);
-      ctx.fillStyle = (i >> 2) % 2 ? '#2BA84A' : '#92CF52'; ctx.fillRect(2 + i, -47 + o, 1, i === 21 ? 13 : 14);
-    }
+    ctx.setTransform(...jac(HS, b.x, b.y)); bandeira(ctx, t);
   }
   ctx.restore();
 }
+function bandeira(g, t) {                          // mastro com o pé na origem; ocupa x -1..24, y -51..0
+  g.fillStyle = '#1B1525'; g.fillRect(-1, -49, 4, 49); g.fillStyle = '#A6A2B2'; g.fillRect(0, -48, 2, 48);
+  g.fillStyle = '#FFD23F'; g.fillRect(-1, -51, 4, 3);
+  for (let i = 0; i < 22; i++) {                   // pano ondulando
+    const o = Math.round(1.5 * Math.sin(t * 6 - i * .45));
+    g.fillStyle = '#1B1525'; g.fillRect(2 + i, -48 + o, 1, 16);
+    g.fillStyle = (i >> 2) % 2 ? '#2BA84A' : '#92CF52'; g.fillRect(2 + i, -47 + o, 1, i === 21 ? 13 : 14);
+  }
+}
 
 // ---------- desenho ----------
+function mira(g, W, Ht, dp) {                     // cantos amarelos no centro; devolve a base
+  const m = Math.min(W, Ht) * .42, x = (W - m) / 2, y = (Ht - m) / 2, l = m * .18;
+  g.strokeStyle = '#F2C230'; g.lineWidth = 5 * dp; g.beginPath();
+  for (const [cx, cy, sx, sy] of [[x, y, 1, 1], [x + m, y, -1, 1], [x, y + m, 1, -1], [x + m, y + m, -1, -1]]) { g.moveTo(cx + sx * l, cy); g.lineTo(cx, cy); g.lineTo(cx, cy + sy * l); }
+  g.stroke();
+  return y + m;
+}
+function placar(g, W, dp) {                       // douradas pegas
+  const pg = douradas.filter(d => d.pega).length, z = 2.4 * dp, x = W - 16 * dp, y = 16 * dp;
+  g.font = `bold ${18 * dp}px system-ui`; const tw = g.measureText(`${pg}/${douradas.length}`).width;
+  g.fillStyle = '#000a'; g.beginPath(); g.roundRect(x - tw - 46 * dp, y, tw + 46 * dp, 36 * dp, 18 * dp); g.fill();
+  g.imageSmoothingEnabled = false; g.drawImage(dourImg, 0, 0, 12, 12, x - tw - 38 * dp, y + 18 * dp - 6 * z, 12 * z, 12 * z);
+  g.fillStyle = '#FFE3A0'; g.textAlign = 'right'; g.fillText(`${pg}/${douradas.length}`, x - 12 * dp, y + 25 * dp); g.textAlign = 'start';
+}
+function seta(g, p0, W, Ht, dp) {                 // seta na borda apontando onde o Bê está
+  if (p0.x >= 0 && p0.x <= W && p0.y >= 0 && p0.y <= Ht) return;
+  const bx = Math.max(W * .05, Math.min(W * .95, p0.x)), by = Math.max(Ht * .06, Math.min(Ht * .94, p0.y)), ang = Math.atan2(p0.y - by, p0.x - bx), r = 18 * dp;
+  g.fillStyle = '#F2C230'; g.beginPath();
+  g.moveTo(bx + Math.cos(ang) * r, by + Math.sin(ang) * r);
+  g.lineTo(bx + Math.cos(ang + 2.5) * r, by + Math.sin(ang + 2.5) * r);
+  g.lineTo(bx + Math.cos(ang - 2.5) * r, by + Math.sin(ang - 2.5) * r); g.fill();
+}
 function desenha(F, t) {
   const W = tela.width = innerWidth * devicePixelRatio, Ht = tela.height = innerHeight * devicePixelRatio, dp = devicePixelRatio;
   const k = Math.max(W / F.w, Ht / F.h), ox = (W - F.w * k) / 2, oy = (Ht - F.h * k) / 2;
@@ -487,31 +534,16 @@ function desenha(F, t) {
     ctx.beginPath(); ctx.arc(p.x, p.y, 11 * e, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
   }
   if (!est.rastreio) {                              // mira: convida a apontar para os quadrados
-    const m = Math.min(W, Ht) * .42, x = (W - m) / 2, y = (Ht - m) / 2, l = m * .18;
-    ctx.strokeStyle = '#F2C230'; ctx.lineWidth = 5 * dp; ctx.beginPath();
-    for (const [cx, cy, sx, sy] of [[x, y, 1, 1], [x + m, y, -1, 1], [x, y + m, 1, -1], [x + m, y + m, -1, -1]]) { ctx.moveTo(cx + sx * l, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * l); }
-    ctx.stroke();
+    const yb = mira(ctx, W, Ht, dp);
     ctx.fillStyle = '#fff'; ctx.font = `bold ${20 * dp}px system-ui`; ctx.textAlign = 'center';
-    ctx.fillText(est.ativo ? `Volte a mirar ${LOCAL ? 'nos blocos dourados' : 'nos quadrados da placa'}` : `Aponte para ${LOCAL ? 'o bloco dourado 1' : 'os quadrados pretos da placa'}`, W / 2, y + m + 34 * dp); ctx.textAlign = 'start';
+    ctx.fillText(est.ativo ? `Volte a mirar ${LOCAL ? 'nos blocos dourados' : 'nos quadrados da placa'}` : `Aponte para ${LOCAL ? 'o bloco dourado 1' : 'os quadrados pretos da placa'}`, W / 2, yb + 34 * dp); ctx.textAlign = 'start';
   }
-  if (est.ativo) {                                // placar: douradas pegas
-    const pg = douradas.filter(d => d.pega).length, z = 2.4 * dp, x = W - 16 * dp, y = 16 * dp;
-    ctx.font = `bold ${18 * dp}px system-ui`; const tw = ctx.measureText(`${pg}/${douradas.length}`).width;
-    ctx.fillStyle = '#000a'; ctx.beginPath(); ctx.roundRect(x - tw - 46 * dp, y, tw + 46 * dp, 36 * dp, 18 * dp); ctx.fill();
-    ctx.imageSmoothingEnabled = false; ctx.drawImage(dourImg, 0, 0, 12, 12, x - tw - 38 * dp, y + 18 * dp - 6 * z, 12 * z, 12 * z);
-    ctx.fillStyle = '#FFE3A0'; ctx.textAlign = 'right'; ctx.fillText(`${pg}/${douradas.length}`, x - 12 * dp, y + 25 * dp); ctx.textAlign = 'start';
-  }
+  if (est.ativo) placar(ctx, W, dp);
   if (est.chegou) { ctx.fillStyle = '#2BA84A'; ctx.font = `bold ${40 * dp}px system-ui`; ctx.textAlign = 'center'; ctx.fillText('CHEGOU!', W / 2, Ht * .2); ctx.textAlign = 'start'; }
   if (HS && est.ativo && est.rastreio) {
     const wx = GX0 + P.x * C, wy = GY0 + P.y * C, p0 = ap(HS, wx, wy), px = ap(HS, wx + 10, wy), py = ap(HS, wx, wy + 10);
     const ex = {x: (px.x - p0.x) / 10, y: (px.y - p0.y) / 10}, ey = {x: (py.x - p0.x) / 10, y: (py.y - p0.y) / 10};
-    if (p0.x < 0 || p0.x > W || p0.y < 0 || p0.y > Ht) {   // seta na borda apontando onde o Bê está
-      const bx = Math.max(W * .05, Math.min(W * .95, p0.x)), by = Math.max(Ht * .06, Math.min(Ht * .94, p0.y)), ang = Math.atan2(p0.y - by, p0.x - bx), r = 18 * dp;
-      ctx.fillStyle = '#F2C230'; ctx.beginPath();
-      ctx.moveTo(bx + Math.cos(ang) * r, by + Math.sin(ang) * r);
-      ctx.lineTo(bx + Math.cos(ang + 2.5) * r, by + Math.sin(ang + 2.5) * r);
-      ctx.lineTo(bx + Math.cos(ang - 2.5) * r, by + Math.sin(ang - 2.5) * r); ctx.fill();
-    }
+    seta(ctx, p0, W, Ht, dp);
     const fr = ATLAS.animations[P.anim].frames[P.q];
     ctx.save();
     if (est.invul > 0 && (est.invul * 10 | 0) % 2) ctx.globalAlpha = .25;
@@ -524,6 +556,190 @@ function desenha(F, t) {
     `fps ${est.fps.toFixed(0)}  det ${detMs.toFixed(0)} ms  vídeo ${F.w}×${F.h}\n` +
     `marcas [${marcas.map(m => m.id).sort().join(',')}]  ${NF < 2 ? '' : est.ligado ? `ligado vão ${Ts.slice(1).map((T, k) => (T.x - Ts[k].x - 424).toFixed(0)).join('/')} giro ${(Ts[NF - 1].a * 57.3).toFixed(1)}°` : 'placas no vão presumido'}\n` +
     `douradas ${douradas.filter(d => d.pega).length}/${douradas.length}  quedas ${est.quedas}  mortes ${est.mortes}${est.chegou ? '  CHEGOU' : ''}`;
+}
+
+// ---------- modo XR (Android/ARCore): o celular rastreia o ambiente; lê o bloco dourado uma vez e grava a parede ----------
+const ESC = .28 / 424;                             // m por unidade da folha (424 = 28 cm)
+const X = {s: null, ref: null, camada: null, lig: null, hit: null, toque: null, amostras: new Map(), L: null, alvo: null, vira: 0, achou: false, n: 0, tA: 0,
+  lidos: 0, cp: null, fbo: null, fw: 0, fh: 0, buf: null, img: null, aviso: null, vistos: [], HS: null, vp: null, emul: false};
+const sub = (a, b) => a.map((v, i) => v - b[i]), soma = (a, b) => a.map((v, i) => v + b[i]), esc = (a, k) => a.map(v => v * k);
+const vet = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const uni = a => esc(a, 1 / (Math.hypot(...a) || 1)), horiz = a => uni([a[0], 0, a[2]]);
+const m4 = (M, q) => [0, 1, 2, 3].map(i => M[i] * q[0] + M[4 + i] * q[1] + M[8 + i] * q[2] + M[12 + i] * q[3]);
+const avisa = msg => { X.aviso = {msg, ate: X.tA + 2.5}; };
+function homXR(L, view, vp) {                      // nível -> px do viewport (homogêneo), mesmo shader das placas
+  const pv = (v, w) => m4(view.projectionMatrix, m4(view.transform.inverse.matrix, [...v, w]));
+  const A = pv(esc(L.ex, ESC), 0), B = pv([0, -ESC, 0], 0), O = pv(L.o, 1), hw = vp.width / 2, hh = vp.height / 2;
+  return [hw * (A[0] + A[3]), hw * (B[0] + B[3]), hw * (O[0] + O[3]), hh * (A[3] - A[1]), hh * (B[3] - B[1]), hh * (O[3] - O[1]), A[3], B[3], O[3]];
+}
+function copiaPrepara() {                          // textura opaca da câmera -> quadro pequeno lido pelo ArUco
+  const sh = (tp, src) => { const o = gl.createShader(tp); gl.shaderSource(o, src); gl.compileShader(o); return o; }, p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, 'attribute vec2 uv; uniform float vira; varying vec2 v; void main() { v = vec2(uv.x, vira > .5 ? uv.y : 1. - uv.y); gl_Position = vec4(uv * 2. - 1., 0., 1.); }'));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, 'precision mediump float; uniform sampler2D tx; varying vec2 v; void main() { gl_FragColor = texture2D(tx, v); }'));
+  gl.bindAttribLocation(p, 0, 'uv'); gl.linkProgram(p);
+  return {p, vira: gl.getUniformLocation(p, 'vira')};
+}
+function leCamera(view) {
+  const c = view.camera, tx = X.lig.getCameraImage(c);
+  if (!tx) return;
+  const f = Math.min(1, 960 / Math.max(c.width, c.height)), w = Math.round(c.width * f), h = Math.round(c.height * f);
+  if (!X.cp) X.cp = copiaPrepara();
+  if (X.fw !== w || X.fh !== h) {
+    X.fw = w; X.fh = h;
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    X.fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, X.fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    const ab = new ArrayBuffer(w * h * 4); X.buf = new Uint8Array(ab); X.img = new ImageData(new Uint8ClampedArray(ab), w, h);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, X.fbo); gl.viewport(0, 0, w, h); gl.disable(gl.BLEND);
+  gl.useProgram(X.cp.p); gl.uniform1f(X.cp.vira, X.vira); gl.bindTexture(gl.TEXTURE_2D, tx); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, X.buf);
+  gl.useProgram(glp.p); gl.enable(gl.BLEND); gl.bindTexture(gl.TEXTURE_2D, null);
+  const t0 = performance.now(), ms = detector.detect(X.img).filter(m => VALIDOS.has(m.id));
+  detMs = detMs * .8 + (performance.now() - t0) * .2;
+  X.vistos = ms.map(m => m.id);
+  if (!ms.length) { if (!X.achou) X.vira ^= 1; return; }   // orientação da textura varia por aparelho: alterna até decodificar
+  X.achou = true;
+  let novo = false;
+  for (const m of ms) novo = amostra(m, view, w, h) || novo;
+  if (novo) ajusta();
+}
+function amostra(m, view, w, h) {                  // pose do marcador (homografia -> R, t) levada ao espaço do mundo
+  const c = m.corners;
+  if (Math.hypot(c[2].x - c[0].x, c[2].y - c[0].y) < 30) return false;
+  const Pm = view.projectionMatrix, k = cantosMarca(m.id), L2 = MARC.lado / 2, cx = k.p[0].x + L2, cy = k.p[0].y + L2;
+  const Hm = homografia(k.p.map(p => ({x: (p.x - cx) * ESC, y: (p.y - cy) * ESC})),
+    c.map(q => ({x: (2 * q.x / w - 1 + Pm[8]) / Pm[0], y: -((1 - 2 * q.y / h) + Pm[9]) / Pm[5]})));   // px -> raio normalizado (y para baixo)
+  if (!Hm) return false;
+  const h1 = [Hm[0], Hm[3], Hm[6]], h2 = [Hm[1], Hm[4], Hm[7]], h3 = [Hm[2], Hm[5], Hm[8]];
+  let l = 2 / (Math.hypot(...h1) + Math.hypot(...h2));
+  if (h3[2] * l < 0) l = -l;
+  const t = esc(h3, l), r1 = uni(h1), r3 = uni(vet(r1, h2)), r2 = vet(r3, r1);
+  if (t[2] < .08 || t[2] > 4) return false;
+  const M = view.transform.matrix, cv = (v, w) => m4(M, [v[0], -v[1], -v[2], w]).slice(0, 3);
+  const p = cv(t, 1), ex = cv(r1, 0), ey = cv(r2, 0);
+  if (Math.abs(ex[1]) > .5 || ey[1] > -.7) return false;   // marcador deitado ou girado demais: leitura ruim
+  const a = X.amostras.get(m.id) || [];
+  a.push({p, e: horiz(ex)}); if (a.length > 40) a.shift();
+  X.amostras.set(m.id, a);
+  return true;
+}
+function ajusta() {                                // parede = reta pelos blocos lidos (posição nominal no nível) + direção dos marcadores
+  const bl = [];
+  for (const [id, a] of X.amostras) {
+    if (a.length < 4) continue;
+    const med = [0, 1, 2].map(i => a.map(s => s.p[i]).sort((x, y) => x - y)[a.length >> 1]), bons = a.filter(s => Math.hypot(...sub(s.p, med)) < .03);
+    if (!bons.length) continue;
+    const k = cantosMarca(id), L2 = MARC.lado / 2, w = folhaMundo(k.f, k.p[0].x + L2, k.p[0].y + L2);
+    const m = esc(bons.reduce((s, b) => soma(s, b.p), [0, 0, 0]), 1 / bons.length), e = uni(bons.reduce((s, b) => soma(s, b.e), [0, 0, 0]));
+    bl.push({x: w.x * ESC, q: soma(m, [0, w.y * ESC, 0]), e, n: a.length});   // q = ponto da linha y = 0 do nível
+  }
+  X.lidos = bl.length;
+  if (!bl.length) return;
+  const xc = bl.reduce((s, b) => s + b.x, 0) / bl.length, qc = esc(bl.reduce((s, b) => soma(s, b.q), [0, 0, 0]), 1 / bl.length);
+  const ex = horiz(bl.reduce((s, b) => soma(s, soma(esc(sub(b.q, qc), b.x - xc), esc(b.e, .01))), [0, 0, 0]));   // blocos distantes mandam no giro
+  X.alvo = {o: sub(qc, esc(ex, xc)), ex};
+  if (!X.L && bl.some(b => b.n >= 6)) { X.L = {o: [...X.alvo.o], ex: [...X.alvo.ex]}; avisa('Parede gravada!'); }
+}
+function tocaXR() {                                // sem leitura pela câmera: toque no bloco 1 (hit-test na parede)
+  if (X.L) return;
+  if (!X.toque) { avisa(X.hit ? 'Toque no bloco dourado 1' : 'Este celular não lê o bloco: use o modo câmera'); return; }
+  const {p, n} = X.toque;
+  if (Math.abs(n[1]) > .5) { avisa('Toque na parede, em cima do bloco 1'); return; }
+  X.amostras.set(LOCAL.base, Array.from({length: 6}, () => ({p, e: horiz([n[2], 0, -n[0]])})));
+  ajusta();
+}
+function spritesXR(HS, t) {                        // douradas, bandeira e Bê como quads no plano da parede
+  const dw = dourImg.width, dh = dourImg.height;
+  douradas.forEach((d, i) => {
+    if (d.pega || revela(d.f, t) < 1.4) return;
+    const w = folhaMundo(d.f, d.x, d.y + 2 * Math.sin(t * 3 + i)), fi = (t * 10 + i * 3) % 8 | 0;
+    quad(HS, glp.dour, [w.x - 9, w.y - 9, 18, 18], [fi * 12 / dw, 0, 12 / dw, 12 / dh]);
+  });
+  if (!CHEGADA.arte && revela(CHEGADA.f, t) > 1.4) {
+    const b = folhaMundo(CHEGADA.f, CHEGADA.x + 8, CHEGADA.y + CHEGADA.h);
+    bandCtx.setTransform(1, 0, 0, 1, 0, 0); bandCtx.clearRect(0, 0, 26, 54); bandCtx.setTransform(1, 0, 0, 1, 1, 51); bandeira(bandCtx, t);
+    gl.bindTexture(gl.TEXTURE_2D, glp.band); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bandCan);
+    quad(HS, glp.band, [b.x - 1, b.y - 51, 26, 54], [0, 0, 1, 1]);
+  }
+  const wx = GX0 + P.x * C, wy = GY0 + P.y * C, fr = ATLAS.animations[P.anim].frames[P.q], A = ATLAS.anchor, o = P.olha, sw = sprite.width, sh = sprite.height;
+  quad(HS, glp.be, [wx - o * A.x, wy - A.y, o * fr.w, fr.h], [fr.x / sw, fr.y / sh, fr.w / sw, fr.h / sh], 99, 0, est.invul > 0 && (est.invul * 10 | 0) % 2 ? .25 : 1);
+}
+function hudXR() {
+  const cv = $('xr2d'), dp = devicePixelRatio, W = cv.width = innerWidth * dp, Ht = cv.height = innerHeight * dp, g = cv.getContext('2d');
+  const texto = (s, y, z = 18) => { g.font = `bold ${z * dp}px system-ui`; g.textAlign = 'center'; g.lineJoin = 'round'; g.lineWidth = 5 * dp; g.strokeStyle = '#000b'; g.strokeText(s, W / 2, y); g.fillStyle = '#fff'; g.fillText(s, W / 2, y); };
+  if (!X.L) {
+    const yb = mira(g, W, Ht, dp);
+    texto(X.lig ? 'Aponte para o bloco dourado 1' : 'Toque no bloco dourado 1', yb + 34 * dp, 20);
+    if (X.lig && X.hit) texto('ou toque nele', yb + 62 * dp, 15);
+  } else {
+    if (est.ativo) placar(g, W, dp);
+    texto(`blocos lidos ${X.lidos}/${NF}`, Ht - 104 * dp, 13);
+    if (X.emul) texto('Movimente o celular devagar', Ht * .5);
+  }
+  if (est.chegou) texto('CHEGOU!', Ht * .2, 40);
+  if (X.HS && est.ativo) {
+    const wx = GX0 + P.x * C, wy = GY0 + P.y * C, kx = W / X.vp.width, ky = Ht / X.vp.height, p = ap(X.HS, wx, wy);
+    const atras = X.HS[6] * wx + X.HS[7] * wy + X.HS[8] <= 0, q = {x: p.x * kx, y: p.y * ky};
+    seta(g, atras ? {x: W / 2 - (q.x - W / 2) * 1e3, y: Ht / 2 - (q.y - Ht / 2) * 1e3} : q, W, Ht, dp);   // atrás da câmera: lado oposto
+  }
+  if (X.aviso && X.tA < X.aviso.ate) texto(X.aviso.msg, Ht * .32, 22);
+}
+function quadroXR(tms, frame) {
+  frame.session.requestAnimationFrame(quadroXR);
+  const t = tms / 1000, dt = X.tA ? Math.min(.05, t - X.tA) : 0; X.tA = t; X.n++;
+  est.fps = est.fps * .9 + (dt > 0 ? .1 / dt : 0);
+  const pose = frame.getViewerPose(X.ref);
+  X.toque = null;
+  if (X.hit) for (const r of frame.getHitTestResultsForTransientInput(X.hit)) if (r.results.length) {
+    const M = r.results[0].getPose(X.ref).transform.matrix; X.toque = {p: [M[12], M[13], M[14]], n: [M[4], M[5], M[6]]};
+  }
+  if (pose && X.lig && pose.views[0].camera && X.n % (X.L ? 10 : 3) === 0) leCamera(pose.views[0]);   // antes de ligar o framebuffer da camada
+  if (X.L && X.alvo) { X.L.o = X.L.o.map((v, i) => v + (X.alvo.o[i] - v) * .15); X.L.ex = horiz(X.L.ex.map((v, i) => v + (X.alvo.ex[i] - v) * .15)); }
+  X.emul = !!pose && pose.emulatedPosition;
+  est.rastreio = !!X.L && !!pose && !X.emul;
+  if (est.rastreio && !est.ativo) comeca(t, 0);
+  if (mudouTs()) rasteriza();
+  masc.set(fixo); maoSegs = [];
+  fisica(dt);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, X.camada.framebuffer);
+  gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  X.HS = null;
+  if (pose) for (const view of pose.views) {
+    const vp = X.camada.getViewport(view);
+    gl.viewport(vp.x, vp.y, vp.width, vp.height);
+    if (!est.ativo || !X.L) continue;
+    gl.uniform2f(glp.tam, vp.width, vp.height);
+    const HS = homXR(X.L, view, vp);
+    folhasGL(HS, t); spritesXR(HS, t);
+    if (!X.HS) { X.HS = HS; X.vp = vp; }
+  }
+  hudXR();
+}
+async function entraXR() {
+  if (X.s || !glp) return;
+  if (video) { video.srcObject.getTracks().forEach(tr => tr.stop()); video = null; }   // libera a câmera para o ARCore
+  let s;
+  try {
+    s = await navigator.xr.requestSession('immersive-ar', {requiredFeatures: ['local'], optionalFeatures: ['camera-access', 'dom-overlay', 'hit-test'], domOverlay: {root: $('xrui')}});
+    await gl.makeXRCompatible();
+    X.camada = new XRWebGLLayer(s, gl, {alpha: true, antialias: false, depth: false});
+    s.updateRenderState({baseLayer: X.camada});
+    X.ref = await s.requestReferenceSpace('local');
+  } catch (err) { if (s) s.end(); alert('AR indisponível: ' + err.message); return; }
+  try { X.lig = (!s.enabledFeatures || s.enabledFeatures.includes('camera-access')) && window.XRWebGLBinding ? new XRWebGLBinding(s, gl) : null; } catch (err) { X.lig = null; }
+  X.hit = await s.requestHitTestSourceForTransientInput?.({profile: 'generic-touchscreen'}).catch(() => null) ?? null;
+  Object.assign(X, {s, amostras: new Map(), L: null, alvo: null, achou: false, n: 0, tA: 0, lidos: 0, aviso: null, HS: null});
+  Object.assign(teclas, {e: false, d: false, pulo: false, usado: false});
+  fonte = 'xr'; est.ativo = false; document.body.classList.add('xr');
+  s.addEventListener('select', tocaXR); s.addEventListener('end', saiXR);
+  s.requestAnimationFrame(quadroXR);
+}
+function saiXR() {
+  Object.assign(X, {s: null, camada: null, lig: null, hit: null, L: null, alvo: null});
+  fonte = 'teste'; $('fonte').value = 'teste'; document.body.classList.remove('xr', 'cam');
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); est.ativo = est.rastreio = false; H = Hi = null; tVisto = -9;
 }
 
 // ---------- laço ----------
@@ -546,7 +762,7 @@ let tAnt = performance.now();
 function laco(now) {
   const dt = Math.min(.05, (now - tAnt) / 1000); tAnt = now;
   est.fps = est.fps * .9 + (dt > 0 ? .1 / dt : 0);
-  passo(dt, now / 1000);
+  if (!X.s) passo(dt, now / 1000);               // em AR quem roda é o quadro da sessão
   requestAnimationFrame(laco);
 }
 
@@ -576,6 +792,10 @@ for (const [id, t] of [['bE', 'e'], ['bD', 'd'], ['bP', 'pulo']]) {
   b.onpointerup = b.onpointercancel = () => { teclas[t] = false; if (t === 'pulo') teclas.usado = false; };
 }
 $('vao').oninput = $('mao').onchange = () => desenhaCena();
+$('bAR').onclick = entraXR;
+$('bSai').onclick = () => X.s && X.s.end();
+$('bRe').onclick = () => { X.amostras = new Map(); X.L = X.alvo = null; X.lidos = 0; est.ativo = est.rastreio = false; };
+for (const b of $('xrui').querySelectorAll('button')) b.addEventListener('beforexrselect', e => e.preventDefault());   // botão não vira toque na parede
 $('fonte').onchange = async () => {
   fonte = $('fonte').value; H = Hi = null; tVisto = -9;
   document.body.classList.toggle('cam', fonte === 'cam');
@@ -604,9 +824,10 @@ Promise.all([
   if (LOCAL) $('zoom').value = 100;               // celular a ~60 cm da parede
   cam.bx = cam.x = LOCAL ? FA.x + 300 * K : (FA.x + B.x + 424 * K) / 2; cam.by = cam.y = FA.y + 150 * K;
   window.__J = {NF, FOLHAS, LOCAL, NT, blocoCena, glOk: () => !!glp, P, est, cam, Ts, teclas, douradas, passo, desenhaCena, cenaQuadro, folhaB, FA, K, ROT_B, GX0, GY0, C,
-    H: () => H, marcas: () => marcas, tipo: (wx, wy) => tipo((wx - GX0) / C, (wy - GY0) / C)};
+    H: () => H, marcas: () => marcas, X, ESC, cena, MARC, cantosMarca, folhaMundo, tipo: (wx, wy) => tipo((wx - GX0) / C, (wy - GY0) / C)};
   const q = QS;
   if (q.has('cam')) { $('fonte').value = 'cam'; $('fonte').onchange(); $('hud').classList.add('min'); }
+  if (LOCAL && glp && navigator.xr && q.get('xr') !== '0') navigator.xr.isSessionSupported('immersive-ar').then(ok => $('bAR').classList.toggle('ok', ok)).catch(() => {});
   if (!q.has('pausa')) requestAnimationFrame(laco);
 });
 </script>
