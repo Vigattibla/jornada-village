@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#1B1525">
+<title>O Segredo do Village</title>
+<meta name="description" content="Tem um baú dourado escondido no Village Resort. Ele abre à 00h de 27/11, e quem tem a chave entra primeiro.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jersey+10&display=swap" rel="stylesheet">
+<style>
+:root{--noite:#1B1525;--creme:#FFF3D6;--creme2:#FFF8E8;--marrom:#633806;--marrom2:#3B2410;--ouro:#EF9F27;--ouro2:#FAC775;--ouro3:#B86E12;--erro:#a3261b;--px:'Jersey 10',system-ui,sans-serif}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--noite);color:var(--creme2);font:16px/1.5 system-ui,sans-serif;-webkit-text-size-adjust:100%}
+img.px,canvas.px{image-rendering:pixelated;image-rendering:crisp-edges}
+a{color:var(--ouro2)}
+h3{font-size:24px}
+h1,h2,h3,.px-t{font-family:var(--px);font-weight:400;line-height:1.1;letter-spacing:.5px}
+button,.bt{font:400 23px var(--px);letter-spacing:.5px;border:3px solid var(--marrom);border-radius:6px;background:var(--ouro);color:var(--noite);padding:12px 20px;min-height:48px;box-shadow:0 4px 0 var(--marrom);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+button:active,.bt:active{transform:translateY(3px);box-shadow:0 1px 0 var(--marrom)}
+button:focus-visible,.bt:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--ouro2);outline-offset:3px}
+button:disabled,.bt[aria-disabled=true]{background:#cdbfa3;color:#6b5a44;cursor:not-allowed;box-shadow:0 4px 0 #8c7a5e;border-color:#8c7a5e}
+.bt.sec{background:var(--creme2);color:var(--marrom2)}
+.oculto{display:none!important}
+
+/* faixa de revisão */
+#faixa{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:4px 8px;background:#a3261bee;color:#fff;font:600 12px system-ui;text-align:center}
+
+/* abertura */
+.hero{position:relative;min-height:100svh;overflow:hidden;padding:44px 16px 330px;display:flex;flex-direction:column;align-items:center}
+#ceu{position:absolute;left:0;top:0;z-index:0}
+.cartao{position:relative;z-index:2;width:100%;max-width:440px;background:var(--creme);color:var(--marrom2);border:4px solid var(--marrom);outline:3px solid var(--ouro);border-radius:6px;padding:18px 18px 20px;text-align:center;box-shadow:0 10px 30px #0006}
+.cartao small{display:block;letter-spacing:3px;font-weight:700;color:var(--ouro3);font-size:12px;text-transform:uppercase}
+.cartao h1{margin:6px 0 8px;font-size:46px;color:var(--marrom2)}
+.cartao p{margin:0 0 12px}
+.contagem{margin:6px 0 14px}
+.contagem .rot{font:400 17px var(--px);letter-spacing:2px;text-transform:uppercase;color:var(--ouro3)}
+.relogio{display:flex;justify-content:center;gap:6px;margin-top:6px}
+.relogio div{min-width:58px;background:var(--marrom2);color:var(--ouro2);border-radius:4px;padding:6px 4px 4px;box-shadow:inset 0 -4px 0 #0005}
+.relogio b{display:block;font:400 38px/1 var(--px);font-variant-numeric:tabular-nums}
+.relogio b.troca{animation:cai .25s steps(3)}
+.relogio span{display:block;font:700 10px system-ui,sans-serif;letter-spacing:1px;text-transform:uppercase;color:#d9b98a;margin-top:3px}
+@keyframes cai{from{transform:translateY(-6px);opacity:.3}to{transform:none;opacity:1}}
+.acoes{display:flex;flex-direction:column;gap:10px;align-items:stretch}
+.agenda{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.agenda .bt{flex:1;font-size:15px;padding:10px 12px}
+.nota{font-size:13px;color:#7a5a36;margin-top:10px}
+#balao{position:absolute;z-index:3;transform:translate(-50%,-100%);background:var(--creme2);color:var(--noite);border:3px solid var(--noite);border-radius:8px;padding:6px 10px;font:400 20px var(--px);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s steps(2)}
+#balao.on{opacity:1}
+#balao:after{content:'';position:absolute;left:50%;bottom:-9px;margin-left:-6px;border:6px solid transparent;border-top-color:var(--noite)}
+#toqueBau{position:absolute;z-index:2;background:transparent;border:0;box-shadow:none;padding:0;min-height:0;cursor:pointer}
+#toqueBau:active{transform:none}
+.desce{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:2;font:400 17px var(--px);letter-spacing:2px;color:var(--creme2);text-decoration:none;text-shadow:0 2px 0 #000a;animation:quica 1.6s steps(4) infinite}
+@keyframes quica{50%{transform:translate(-50%,5px)}}
+
+/* seções */
+main section{padding:56px 16px;max-width:760px;margin:0 auto}
+main h2{font-size:38px;margin:0 0 6px;color:var(--ouro2);text-align:center}
+.sub{text-align:center;color:#d9c9ae;margin:0 auto 24px;max-width:520px}
+.rev{opacity:0;transform:translateY(16px);transition:opacity .45s steps(4),transform .45s steps(4)}
+.rev.vis{opacity:1;transform:none}
+.historia p{font-size:17px;max-width:560px;margin:0 auto 14px}
+.historia .assina{font-family:var(--px);font-size:22px;color:var(--ouro2);text-align:center}
+.passos{display:grid;gap:14px;list-style:none;padding:0;margin:0}
+.passos li,.serie,.cartinha{background:var(--creme);color:var(--marrom2);border:4px solid var(--marrom);border-radius:6px;padding:16px;box-shadow:0 6px 0 #0004}
+.passos li{display:grid;grid-template-columns:64px 1fr;gap:14px;align-items:center}
+.passos .ic{width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:var(--noite);border-radius:4px}
+.passos .ic img{max-width:48px;max-height:52px}
+.passos h3{margin:0 0 4px;font-size:26px}
+.passos p{margin:0;font-size:15px}
+.series{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.serie{text-align:center;position:relative;padding:14px 10px}
+.serie img{height:69px;margin:4px auto 6px;display:block}
+.serie h3{margin:0;font-size:26px}
+.serie .dt{font-size:13px;color:#7a5a36}
+.chip{display:inline-block;margin-top:8px;font:400 16px var(--px);letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:4px;background:#e5d6b8;color:#6b5a44}
+.serie.aberta{outline:3px solid var(--ouro);animation:brilha 1.4s steps(2) infinite}
+.serie.aberta .chip{background:var(--ouro);color:var(--noite)}
+.serie.fechada{filter:grayscale(.85);opacity:.75}
+.serie.black{background:#101014;color:#F5C400;border-color:#F5C400}
+.serie.black .dt{color:#c9b24a}
+@keyframes brilha{50%{box-shadow:0 6px 0 #0004,0 0 0 4px #FAC77555}}
+
+/* chave */
+#chave{max-width:520px}
+form{display:grid;gap:14px}
+label.campo{display:grid;gap:4px;font-weight:600;font-size:15px}
+input[type=text],input[type=tel],input[type=email]{font:16px system-ui;padding:12px;border:3px solid var(--marrom);border-radius:6px;background:#fff;color:var(--marrom2);width:100%}
+input[aria-invalid=true]{border-color:var(--erro)}
+.ok{display:grid;grid-template-columns:24px 1fr;gap:10px;align-items:start;font-size:14px;line-height:1.4}
+.ok input{width:22px;height:22px;margin:0;accent-color:var(--ouro3)}
+.ok.desl{opacity:.45}
+fieldset{border:0;padding:0;margin:0}
+legend{font-weight:600;font-size:15px;margin-bottom:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips label{cursor:pointer}
+.chips input{position:absolute;opacity:0;pointer-events:none}
+.chips span{display:inline-block;padding:8px 12px;border:3px solid var(--marrom);border-radius:20px;font:400 20px var(--px);background:#fff}
+.chips input:checked+span{background:var(--ouro);color:var(--noite)}
+.chips input:focus-visible+span{outline:3px solid var(--ouro2);outline-offset:2px}
+.erro{color:var(--erro);font-weight:600;font-size:14px;min-height:1em;margin:0}
+.miuda{font-size:12px;color:#7a5a36;margin:0}
+.fechado-msg{text-align:center}
+#minha{text-align:center}
+#minha .num{font:400 60px/1 var(--px);color:var(--marrom2);margin:6px 0 2px;font-variant-numeric:tabular-nums}
+#minha .num small{font-size:30px}
+.nro sup{font-size:.6em;line-height:0;vertical-align:.5em}
+#minha .ser{font:400 21px var(--px);letter-spacing:2px;text-transform:uppercase}
+#giro{width:240px;height:240px;display:block;margin:0 auto}
+#minha .acoes{margin-top:14px}
+.demo{display:inline-block;background:var(--erro);color:#fff;font:700 11px system-ui;letter-spacing:1px;padding:3px 8px;border-radius:4px;margin-bottom:8px}
+
+/* resort e perguntas */
+.resort{display:grid;gap:12px}
+details{background:#2a2136;border:3px solid #3d3150;border-radius:6px;padding:0 14px;margin-bottom:10px}
+summary{cursor:pointer;font:400 22px var(--px);padding:14px 0;list-style:none;display:flex;justify-content:space-between;gap:10px}
+summary::-webkit-details-marker{display:none}
+summary:after{content:'+';color:var(--ouro)}
+details[open] summary:after{content:'−'}
+details p{margin:0 0 14px;color:#e6d8bf}
+footer{text-align:center;padding:36px 16px 48px;color:#a898b8;font-size:13px;border-top:3px solid #2a2136}
+footer .px-t{font-size:18px;color:var(--ouro2);margin-bottom:6px}
+dialog{border:4px solid var(--marrom);outline:3px solid var(--ouro);border-radius:6px;background:var(--creme);color:var(--marrom2);padding:16px;max-width:min(92vw,380px);text-align:center}
+dialog::backdrop{background:#1B1525e0}
+dialog canvas{height:min(60vh,520px);max-width:100%;aspect-ratio:9/16;border-radius:4px;display:block;margin:0 auto 12px}
+dialog .acoes{gap:8px}
+
+/* fotos: chegam em pixel e ficam nítidas (sem JS ou com movimento reduzido, só a foto) */
+.aerea{position:relative;margin:0;height:min(78vh,620px);overflow:hidden;background:#2a2136;border-block:4px solid var(--marrom)}
+.aerea img,.aerea canvas,.foto img,.foto canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:calc(var(--x,.5)*100%) 100%;display:block}
+.aerea canvas,.foto canvas{display:none;image-rendering:pixelated}
+.pxl img{visibility:hidden}
+.pxl canvas{display:block}
+.aerea:after{content:'';position:absolute;inset:auto 0 0;height:60%;background:linear-gradient(#1B152500,#1B1525f0);pointer-events:none}
+.aerea figcaption{position:absolute;left:16px;right:16px;bottom:26px;z-index:1;text-align:center}
+.aerea b{display:block;text-wrap:balance;font:400 clamp(34px,9vw,56px)/1 var(--px);color:var(--ouro2);text-shadow:0 3px 0 #2A1606;margin-bottom:6px}
+.aerea span{color:#e6d8bf;font-size:15px}
+.fotos{display:grid;gap:14px;margin-top:22px}
+.foto{position:relative;margin:0;aspect-ratio:1;border:4px solid var(--marrom);border-radius:6px;overflow:hidden;box-shadow:0 6px 0 #0004;background:#2a2136}
+.foto:before{content:'';position:absolute;inset:0;z-index:2;border:3px solid var(--ouro2);pointer-events:none}
+.foto figcaption{position:absolute;left:12px;right:12px;bottom:12px;z-index:3;width:fit-content;background:var(--creme);color:var(--marrom2);border:3px solid var(--marrom);border-radius:4px;padding:3px 10px 5px;font:400 21px/1.1 var(--px)}
+
+@media (min-width:860px){
+  .hero{align-items:flex-start;justify-content:center;padding:60px 6vw 60px}
+  .cartao{max-width:420px;text-align:left}
+  .relogio{justify-content:flex-start}
+  .agenda{justify-content:flex-start}
+  .passos{grid-template-columns:repeat(3,1fr)}
+  .passos li{grid-template-columns:1fr;text-align:center;justify-items:center}
+  .series{grid-template-columns:repeat(4,1fr)}
+  .resort{grid-template-columns:1fr 1fr}
+  .fotos{grid-template-columns:1fr 1fr}
+  .foto.larga{grid-column:1/-1;aspect-ratio:21/9}
+  .fotos{width:min(1120px,calc(100vw - 48px));margin-left:50%;translate:-50% 0}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .rev{opacity:1;transform:none;transition:none}
+  .desce,.serie.aberta,.relogio b.troca{animation:none}
+}
+</style>
+</head>
+<body>
+<div id="faixa" class="oculto"></div>
+
+<header class="hero" id="topo">
+  <canvas id="ceu" class="px" aria-hidden="true"></canvas>
+  <div class="cartao">
+    <small>Village Resort apresenta</small>
+    <h1>O Segredo do Village</h1>
+    <p id="heroTexto"></p>
+    <div class="contagem" id="contagem">
+      <div class="rot" id="contRot"></div>
+      <div class="relogio" role="timer" aria-live="off">
+        <div><b id="cD">00</b><span>dias</span></div>
+        <div><b id="cH">00</b><span>horas</span></div>
+        <div><b id="cM">00</b><span>min</span></div>
+        <div><b id="cS">00</b><span>seg</span></div>
+      </div>
+    </div>
+    <div class="acoes" id="heroAcoes"></div>
+  </div>
+  <button id="toqueBau" aria-label="Tocar no baú"></button>
+  <div id="balao" aria-live="polite"></div>
+  <a class="desce" href="#historia">▼ o segredo</a>
+</header>
+
+<main>
+  <section id="historia" class="historia rev">
+    <h2>Tem um baú no resort</h2>
+    <p class="sub">E ninguém sabe o que tem dentro. Ainda.</p>
+    <p>Toda noite, quando o Village apaga as luzes, o Bê sai atrás das folhas douradas que caem das palmeiras. Numa dessas noites, seguindo a trilha, ele achou um baú escondido. Trancado. Brilhando pela fechadura.</p>
+    <p>Desde então o baú balança sozinho de vez em quando, como se tivesse pressa. A gente sabe a data em que ele abre: <b>27 de novembro, à meia-noite</b>. O que tem dentro, só quem estiver lá vai ver primeiro.</p>
+    <p class="assina">Quem tem a chave entra primeiro.</p>
+  </section>
+
+  <figure class="aerea" id="aerea">
+    <img src="fotos/aerea-1600.jpg" srcset="fotos/aerea-1600.jpg 1600w, fotos/aerea-2400.jpg 2400w" sizes="(max-width:700px) 280vw, 100vw" alt="Vista aérea do Village Resort: telhados entre as árvores, piscinas e a praia do lago" loading="lazy" decoding="async">
+    <canvas aria-hidden="true"></canvas>
+    <figcaption><b>O baú está em algum lugar aqui.</b><span>Village Resort, visto de cima.</span></figcaption>
+  </figure>
+
+  <section id="como" class="rev">
+    <h2>Como funciona</h2>
+    <p class="sub">Três passos. Nada para pagar, nada para sortear.</p>
+    <ol class="passos">
+      <li><div class="ic"><img class="px" id="icChave" alt=""></div><div><h3>Pegue sua chave</h3><p>A partir de 02/11, entre na lista com WhatsApp ou e-mail. Você recebe uma chave com número, da série da semana.</p></div></li>
+      <li><div class="ic"><img class="px" id="icFolha" alt=""></div><div><h3>Siga as pistas</h3><p>A história continua nos dias 06, 13 e 20/11. De 20 a 26/11 chega um número da senha do cofre por dia.</p></div></li>
+      <li><div class="ic"><img class="px" id="icBau" alt=""></div><div><h3>Entre primeiro</h3><p>À 00h de 27/11 o baú abre. Quem tem a chave fica sabendo antes e entra antes de todo mundo.</p></div></li>
+    </ol>
+  </section>
+
+  <section id="series" class="rev">
+    <h2>As séries da chave</h2>
+    <p class="sub">Cada semana abre uma série. Quando ela fecha, não volta mais.</p>
+    <div class="series" id="listaSeries"></div>
+  </section>
+
+  <section id="chave" class="rev">
+    <h2>A Chave</h2>
+    <p class="sub" id="chaveSub"></p>
+    <div class="cartinha">
+      <div id="chaveAntes" class="fechado-msg oculto">
+        <p><b>A lista abre em 02/11.</b> Volte nesse dia para pegar uma chave da Série Bronze, a primeira.</p>
+        <div class="agenda" data-agenda></div>
+      </div>
+
+      <form id="form" class="oculto" novalidate>
+        <span class="demo oculto" id="demoForm">MODO DEMONSTRAÇÃO · NADA É ENVIADO</span>
+        <label class="campo">Como podemos te chamar?
+          <input type="text" name="nome" autocomplete="given-name" maxlength="60" required>
+        </label>
+        <label class="campo">WhatsApp (com DDD)
+          <input type="tel" name="whats" autocomplete="tel-national" inputmode="tel" placeholder="(31) 99999-9999" maxlength="16">
+        </label>
+        <label class="ok desl" id="okWhats"><input type="checkbox" name="aceiteWhats" disabled><span>Aceito receber pelo WhatsApp as pistas e o aviso do baú do Village Resort.</span></label>
+        <label class="campo">E-mail
+          <input type="email" name="email" autocomplete="email" maxlength="120" placeholder="voce@email.com">
+        </label>
+        <label class="ok desl" id="okEmail"><input type="checkbox" name="aceiteEmail" disabled><span>Aceito receber por e-mail as pistas e o aviso do baú do Village Resort.</span></label>
+        <p class="miuda">Preencha pelo menos um dos dois. Você pode sair da lista quando quiser.</p>
+        <fieldset>
+          <legend>Quando vocês querem vir?</legend>
+          <div class="chips">
+            <label><input type="radio" name="quando" value="dezembro"><span>Dezembro</span></label>
+            <label><input type="radio" name="quando" value="ferias-janeiro"><span>Férias de janeiro</span></label>
+            <label><input type="radio" name="quando" value="carnaval"><span>Carnaval</span></label>
+            <label><input type="radio" name="quando" value="outro"><span>Outro</span></label>
+          </div>
+        </fieldset>
+        <label class="ok"><input type="checkbox" name="maior" required><span>Tenho 18 anos ou mais e li a <a id="linkPolitica" href="#perguntas" target="_blank" rel="noopener">política de privacidade</a>.</span></label>
+        <p class="erro" id="erro" role="alert"></p>
+        <button type="submit" id="bEnviar">Pegar minha chave</button>
+      </form>
+
+      <div id="minha" class="oculto" aria-live="polite">
+        <span class="demo oculto" id="demoChave">CHAVE DE DEMONSTRAÇÃO</span>
+        <canvas id="giro" class="px" width="48" height="48" aria-hidden="true"></canvas>
+        <div class="px-t">Sua chave</div>
+        <div class="num"><small class="nro">n<sup>o</sup></small> <span id="numChave">0000</span></div>
+        <div class="ser" id="serChave"></div>
+        <p id="minhaTexto" style="margin:12px 0 0"></p>
+        <div class="acoes">
+          <button id="bMoldura">Mostrar nos stories</button>
+          <button class="sec" disabled>Forjar minha chave · 09/11</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="resort" class="rev">
+    <h2>No resort</h2>
+    <p class="sub">Para quem está hospedado no Village.</p>
+    <div class="resort">
+      <div class="cartinha"><h3 class="px-t" style="margin:0 0 6px">O bilhete</h3><p style="margin:0">Procure o bilhete e o quadro do Bê na recepção. Aponte a câmera e veja o segredo começar.</p><p style="margin:10px 0 0"><a class="bt sec" href="../segredo.html">Abrir o segredo</a></p></div>
+      <div class="cartinha"><h3 class="px-t" style="margin:0 0 6px">As estações</h3><p style="margin:0">A partir de 06/11, folhas douradas aparecem pelo resort. Cada uma guarda um pedaço da história.</p></div>
+    </div>
+    <div class="fotos">
+      <figure class="foto larga"><img src="fotos/piscina-2400.jpg" alt="Piscina azul diante dos arcos de tijolo do Village" loading="lazy" decoding="async"><canvas aria-hidden="true"></canvas><figcaption>O Bê já procurou na piscina.</figcaption></figure>
+      <figure class="foto" style="--x:.66"><img src="fotos/chales-1600.jpg" alt="Chalés em A embaixo de uma árvore grande" loading="lazy" decoding="async"><canvas aria-hidden="true"></canvas><figcaption>E embaixo da árvore dos chalés.</figcaption></figure>
+      <figure class="foto"><img src="fotos/lago-2400.jpg" alt="Praia do lago com quiosques e uma cama elástica na água" loading="lazy" decoding="async"><canvas aria-hidden="true"></canvas><figcaption>Agora ele anda olhando o lago.</figcaption></figure>
+    </div>
+  </section>
+
+  <section id="perguntas" class="rev">
+    <h2>Perguntas</h2>
+    <details><summary>É sorteio?</summary><p>Não. Não tem sorteio, prêmio nem concurso. A chave é o seu lugar na lista: com ela, você fica sabendo antes e entra antes quando o baú abrir.</p></details>
+    <details><summary>Quanto custa?</summary><p>Nada. Pegar a chave é gratuito.</p></details>
+    <details><summary>Quem pode participar?</summary><p>Maiores de 18 anos. Se for em família, um adulto pega a chave por todos.</p></details>
+    <details><summary>O que vocês fazem com meus dados?</summary><p>Usamos seu nome e o contato que você escolheu só para mandar as pistas e o aviso do baú, e só pelos canais em que você marcou o aceite. Para sair, responda SAIR no WhatsApp ou clique em descadastrar no e-mail. Detalhes na <a id="linkPolitica2" href="#perguntas" target="_blank" rel="noopener">política de privacidade</a>.</p></details>
+    <details><summary>Perdi o número da minha chave</summary><p>Ele fica salvo neste aparelho, aqui na página. Também vai na primeira mensagem que você recebe.</p></details>
+    <details><summary>O que tem dentro do baú?</summary><p>Segredo. Ele abre à 00h de 27/11.</p></details>
+  </section>
+</main>
+
+<footer>
+  <div class="px-t">Village Resort</div>
+  <div><a id="linkPolitica3" href="#perguntas" target="_blank" rel="noopener">Política de privacidade</a> · <a id="linkInsta" href="#" target="_blank" rel="noopener">Instagram</a></div>
+  <div style="margin-top:8px">O Segredo do Village · 2026</div>
+</footer>
+
+<dialog id="dMoldura">
+  <canvas id="cvMoldura"></canvas>
+  <div class="acoes">
+    <button id="bCompartilhar">Compartilhar</button>
+    <a class="bt sec oculto" id="bBaixarVideo" download="minha-chave.mp4">Baixar vídeo</a>
+    <a class="bt sec" id="bBaixar" download="minha-chave.png">Baixar imagem</a>
+    <button class="sec" id="bFechar">Fechar</button>
+  </div>
+</dialog>
+
+<script src="pixel.js?v=1017"></script>
+<script src="lp.js?v=1017c"></script>
+</body>
+</html>
