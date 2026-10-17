@@ -716,7 +716,7 @@ function desenhaBauFim(t) {
 }
 
 // ---------- trilha: o Bê sai do topo, passa pelo X na aérea e desce estação por estação até o baú ----------
-const tr = {pts: [], d: 0, dir: 1, sentido: 1, parado: -9, chegou: -9, naChegada: false, falou: false, falaAte: 0, falaW: 0, u: 2, sb: 2, vh: 0, W: 0, H: 0, fim: 0, m: [], passosY: [], chave: '', sbAtual: 0, falas: [], falaMsg: '', yB: 0};
+const tr = {pts: [], d: 0, dir: 1, sentido: 1, parado: -9, chegou: -9, naChegada: false, falou: false, falaAte: 0, falaW: 0, u: 2, sb: 2, vh: 0, W: 0, H: 0, fim: 0, m: [], passosY: [], chave: '', sbAtual: 0, falas: [], falaMsg: '', yB: 0, lado: -1, max: 0};
 const trilha = document.createElement('div');
 trilha.id = 'trilha'; trilha.setAttribute('aria-hidden', 'true');
 trilha.innerHTML = '<canvas class="tr-falta"></canvas><canvas class="tr-feita"></canvas>' + ['01', '02', '03', '04', '05', '06'].map(n => `<span class="marco">${n}</span>`).join('') + '<canvas class="xis" width="18" height="18"></canvas>'; 
@@ -774,12 +774,14 @@ function montaTrilha() {
   const zz = (largo ? [[.62, .5], [.5, .35], [.5, .65]] : [[.32, .55], [.7, .5], [.22, .5]]).map(([fx, fy], i) => [Math.round(fts[i].left + fts[i].width * fx), Math.round(Y(fts[i]) + fts[i].height * fy)]);
   const rB = R(bauFim), bs = rB.width / 96, cB = Math.round(rB.left + 48.5 * bs), yB = tr.yB = Math.round(Y(rB) + 74 * bs);   // chão do baú do fim
   const lx = zz[2][0], lado = lx < cB ? -1 : 1, para = Math.round(cB + lado * 32.5 * bs), pre = lado < 0 ? Math.min(lx, para - 40) : Math.max(lx, para + 40);
-  tr.pts = caminho([A, [A[0], fimH - 12], [faixa, fimH + 56], [faixa, topoA - 70], p4, p5, X, ...saida, [faixa, Math.round(Y(rF) - 50)], ...zz, [pre, yB - 2], [cB, yB]], 46);
+  zz[2][0] = pre;                                   // a descida final fica reta em x: inclinada, a estrada dava um degrau logo abaixo da foto do lago
+  tr.pts = caminho([A, [A[0], fimH - 12], [faixa, fimH + 56], [faixa, topoA - 70], p4, p5, X, ...saida, [faixa, Math.round(Y(rF) - 50)], ...zz, [pre, yB], [cB, yB]], 46);
   const total = tr.pts[tr.pts.length - 1].d;
   tr.fim = total - Math.abs(cB - para);             // o Bê para do lado do baú; a estrada termina por baixo dele
   tr.yHist = rS.top + sy;
-  tr.H = yB + 40;
+  tr.H = yB + 40; tr.lado = lado;
   for (const c of [trilha, trilhaBe]) Object.assign(c.style, {width: W + 'px', height: tr.H + 'px'});
+  tr.max = document.documentElement.scrollHeight - innerHeight;
   const Wu = Math.ceil(W / u), Hu = Math.ceil(tr.H / u);
   for (const c of [cvFalta, cvFeita]) { Object.assign(c, {width: Wu, height: Hu}); Object.assign(c.style, {width: Wu * u + 'px', height: Hu * u + 'px'}); }
   const mapas = [[topoA, botA], [Y(rF), Y(rF) + rF.height]], us = []; let ult = '';   // sobre as fotos a estrada vira tracejado de mapa
@@ -823,7 +825,10 @@ function trQuadro(ms) {
   if (!tr.pts.length || !trVis || document.hidden) return;
   const t = ms / 1000, dt = Math.min(.1, (ms - (trUlt || ms)) / 1000), yAlvo = scrollY + tr.vh * .6;
   trUlt = ms;
-  const alvo = Math.min(tr.fim, porY(yAlvo)), antes = tr.d;
+  let alvo = porY(yAlvo);
+  const zona = tr.vh * .4, falta = tr.max - scrollY, antes = tr.d;   // no último trecho da rolagem ele completa a trilha até o baú
+  if (falta < zona) { const d0 = porY(tr.max - zona + tr.vh * .6); alvo = Math.max(alvo, d0 + (tr.fim - d0) * (1 - Math.max(0, falta) / zona)); }
+  alvo = Math.min(tr.fim, alvo);
   tr.d += (alvo - tr.d) * Math.min(1, dt * 9);      // segue a rolagem com um leve atraso, para o passo não travar
   if (Math.abs(alvo - tr.d) < .3) tr.d = alvo;
   if (Math.abs(tr.d - antes) > .05) { tr.parado = t; tr.sentido = Math.sign(tr.d - antes); }
@@ -841,8 +846,11 @@ function trQuadro(ms) {
   marcos.forEach((m, i) => m.classList.toggle('on', tr.d >= tr.m[i] - 4));
   if (yAlvo >= tr.ySer + 60) $('listaSeries').classList.add('gira');   // as quatro chaves giram uma vez, em sequência
   if (Math.abs(scrollY + tr.vh / 2 - tr.yB) < tr.vh) desenhaBauFim(t);
-  cvFeita.style.clipPath = `inset(0 0 ${Math.max(0, tr.H - p.y)}px 0)`;
-  cvFalta.style.clipPath = `inset(${Math.max(0, p.y)}px 0 0 0)`;
+  // estrada feita até os pés do Bê (a faixa inteira); no trecho final, que anda de lado até o baú, o corte é em x
+  const b = 4 * tr.u + 1, yL = Math.round(p.y + b), yT = Math.min(yL, tr.yB - 2 - b), xL = Math.round(p.x - tr.lado * b), E = 1e5, chegou = tr.d >= tr.fim - .5;
+  const [a, c] = tr.lado < 0 ? [0, xL] : [xL, E], [a2, c2] = tr.lado < 0 ? [xL, E] : [0, xL];
+  cvFeita.style.clipPath = chegou ? 'none' : `polygon(0 0,${E}px 0,${E}px ${yT}px,${c}px ${yT}px,${c}px ${yL}px,${a}px ${yL}px,${a}px ${yT}px,0 ${yT}px)`;
+  cvFalta.style.clipPath = chegou ? 'inset(100%)' : `polygon(0 ${yL}px,${a2}px ${yL}px,${a2}px ${yT}px,${c2}px ${yT}px,${c2}px ${yL}px,${E}px ${yL}px,${E}px ${E}px,0 ${E}px)`;
   if (atlas) {
     let fr, dy = 0;
     if (tr.d < 2) ({fr, dy} = quadroBe(t));
@@ -862,7 +870,11 @@ function trQuadro(ms) {
   }
   const fala = t < tr.falaAte;
   balaoT.classList.toggle('on', fala);
-  if (fala) Object.assign(balaoT.style, {left: Math.min(tr.W - tr.falaW / 2 - 6, Math.max(tr.falaW / 2 + 6, p.x)) + 'px', top: p.y - 50 * sb - 12 + 'px'});
+  if (fala) {                                       // o balão fica dentro da tela; a ponta continua apontando para o Bê
+    const cx = Math.min(tr.W - tr.falaW / 2 - 6, Math.max(tr.falaW / 2 + 6, p.x));
+    Object.assign(balaoT.style, {left: cx + 'px', top: p.y - 50 * sb - 12 + 'px'});
+    balaoT.style.setProperty('--rabo', Math.round(Math.min(tr.falaW - 23, Math.max(17, tr.falaW / 2 - 3 + p.x - cx))) + 'px');
+  }
   trPede();
 }
 function trPede() { if (!trRaf && !reduz && tr.pts.length) trRaf = requestAnimationFrame(trQuadro); }

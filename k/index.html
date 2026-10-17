@@ -11,11 +11,11 @@
 // Quando o domínio do Village sair, trocar só DESTINO. ?o=origem identifica a peça (padrão: cartao-chave).
 const DESTINO = '../lp/';
 const o = (new URLSearchParams(location.search).get('o') || 'cartao-chave').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 32) || 'cartao-chave';
-const url = DESTINO + '?' + new URLSearchParams({utm_source: o, utm_medium: 'impresso', utm_campaign: 'segredo-village'}) + '#chave';
+const url = DESTINO + '?' + new URLSearchParams({utm_source: o, utm_medium: 'impresso', utm_campaign: 'segredo-village'});
 location.replace(url);
 </script>
 </head>
 <body>
-<p>Abrindo o mapa… <a href="../lp/#chave">toque aqui</a> se não abrir.</p>
+<p>Abrindo o mapa… <a href="../lp/">toque aqui</a> se não abrir.</p>
 </body>
 </html>

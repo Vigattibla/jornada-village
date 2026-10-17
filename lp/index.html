@@ -50,7 +50,9 @@ button:disabled,.bt[aria-disabled=true]{background:#cdbfa3;color:#6b5a44;cursor:
 .nota{font-size:13px;color:#7a5a36;margin-top:10px}
 #balao,#falaT{position:absolute;z-index:3;transform:translate(-50%,-100%);background:var(--creme2);color:var(--noite);border:3px solid var(--noite);border-radius:8px;padding:6px 10px;font:400 20px var(--px);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s steps(2)}
 #balao.on,#falaT.on{opacity:1}
-#balao:after,#falaT:after{content:'';position:absolute;left:50%;bottom:-9px;margin-left:-6px;border:6px solid transparent;border-top-color:var(--noite)}
+#balao:before,#falaT:before,#balao:after,#falaT:after{content:'';position:absolute;left:var(--rabo,50%);top:100%;border:solid transparent}
+#balao:before,#falaT:before{margin-left:-12px;border-width:12px;border-top-color:var(--noite)}   /* ponta: contorno escuro com miolo creme */
+#balao:after,#falaT:after{margin-left:-8px;border-width:8px;border-top-color:var(--creme2)}
 #toqueBau{position:absolute;z-index:2;background:transparent;border:0;box-shadow:none;padding:0;min-height:0;cursor:pointer}
 #toqueBau:active{transform:none}
 .desce{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:2;font:400 17px var(--px);letter-spacing:2px;color:var(--creme2);text-decoration:none;text-shadow:0 2px 0 #000a;animation:quica 1.6s steps(4) infinite}
@@ -377,6 +379,6 @@ dialog .acoes{gap:8px}
 </dialog>
 
 <script src="pixel.js?v=1017"></script>
-<script src="lp.js?v=1017y"></script>
+<script src="lp.js?v=1017zb"></script>
 </body>
 </html>
