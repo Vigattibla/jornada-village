@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>O Segredo do Village</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#140C1E;color:#FFF3D6;font:16px system-ui,sans-serif}a{color:#FAC775}</style>
+<script>
+// Redirecionador dos QRs impressos: o QR fica fixo aqui, o destino muda sem reimprimir.
+// Quando o domínio do Village sair, trocar só DESTINO. ?o=origem identifica a peça (padrão: cartao-chave).
+const DESTINO = '../lp/';
+const o = (new URLSearchParams(location.search).get('o') || 'cartao-chave').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 32) || 'cartao-chave';
+const url = DESTINO + '?' + new URLSearchParams({utm_source: o, utm_medium: 'impresso', utm_campaign: 'segredo-village'}) + '#chave';
+location.replace(url);
+</script>
+</head>
+<body>
+<p>Abrindo o mapa… <a href="../lp/#chave">toque aqui</a> se não abrir.</p>
+</body>
+</html>

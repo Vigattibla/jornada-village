@@ -48,9 +48,9 @@ button:disabled,.bt[aria-disabled=true]{background:#cdbfa3;color:#6b5a44;cursor:
 .agenda{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 .agenda .bt{flex:1;font-size:15px;padding:10px 12px}
 .nota{font-size:13px;color:#7a5a36;margin-top:10px}
-#balao{position:absolute;z-index:3;transform:translate(-50%,-100%);background:var(--creme2);color:var(--noite);border:3px solid var(--noite);border-radius:8px;padding:6px 10px;font:400 20px var(--px);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s steps(2)}
-#balao.on{opacity:1}
-#balao:after{content:'';position:absolute;left:50%;bottom:-9px;margin-left:-6px;border:6px solid transparent;border-top-color:var(--noite)}
+#balao,#falaT{position:absolute;z-index:3;transform:translate(-50%,-100%);background:var(--creme2);color:var(--noite);border:3px solid var(--noite);border-radius:8px;padding:6px 10px;font:400 20px var(--px);white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s steps(2)}
+#balao.on,#falaT.on{opacity:1}
+#balao:after,#falaT:after{content:'';position:absolute;left:50%;bottom:-9px;margin-left:-6px;border:6px solid transparent;border-top-color:var(--noite)}
 #toqueBau{position:absolute;z-index:2;background:transparent;border:0;box-shadow:none;padding:0;min-height:0;cursor:pointer}
 #toqueBau:active{transform:none}
 .desce{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:2;font:400 17px var(--px);letter-spacing:2px;color:var(--creme2);text-decoration:none;text-shadow:0 2px 0 #000a;animation:quica 1.6s steps(4) infinite}
@@ -143,7 +143,49 @@ dialog .acoes{gap:8px}
 .foto:before{content:'';position:absolute;inset:0;z-index:2;border:3px solid var(--ouro2);pointer-events:none}
 .foto figcaption{position:absolute;left:12px;right:12px;bottom:12px;z-index:3;width:fit-content;background:var(--creme);color:var(--marrom2);border:3px solid var(--marrom);border-radius:4px;padding:3px 10px 5px;font:400 21px/1.1 var(--px)}
 
+#trilha,#trilhaBe{position:absolute;left:0;top:0;z-index:3;overflow:hidden;pointer-events:none}
+#trilhaBe{z-index:5}   /* o Bê e a fala passam por cima dos selos e do cartão; a estrada, por baixo */
+#trilha canvas,#trilha .marco,#trilhaBe canvas{position:absolute;left:0;top:0}
+#trilha canvas,#trilhaBe canvas{image-rendering:pixelated}
+#trilha .tr-falta{opacity:.75}
+#trilhaBe .be{transform-origin:50% 50%;will-change:transform}
+#trilha .xis{animation:pisca 1s steps(1) infinite}
+@keyframes pisca{50%{opacity:.25}}
+#trilha .marco{transform:translate(-50%,-50%);font:400 20px/1 var(--px);color:var(--creme2);background:var(--marrom2);border:3px solid var(--creme);border-radius:4px;padding:2px 6px 4px;transition:background .2s steps(2),color .2s steps(2),transform .2s steps(2)}
+#trilha .marco.on{background:var(--ouro);color:var(--marrom2);border-color:var(--marrom2);transform:translate(-50%,-50%) scale(1.15)}
+#trilha.fixa .tr-falta,#trilhaBe.fixa{display:none}
+.trilhado #historia{padding-left:84px}
+.trilhado #historia h2,.trilhado #historia .sub,.trilhado #historia .assina{text-align:left}
+.trilhado #historia p{margin-left:0}
+.passo{opacity:0;transform:translateX(-14px);transition:opacity .4s steps(3),transform .4s steps(3)}
+.passo.vis{opacity:1;transform:none}
+
+/* estações 03 a 06: a estrada segue pela faixa; selos, cartão da Chave, legendas e o baú passam por cima dela */
+.trilhado .passos .ic,.trilhado #chave .cartinha,.trilhado .foto figcaption,.trilhado .aerea figcaption,#bauFim{z-index:4}
+.trilhado #chave .cartinha,#bauFim{position:relative}
+.trilhado :is(#como,#series,#chave,#resort)>:is(h2,.sub){text-align:left;margin-left:0}
+.trilhado :is(#series,#chave,#resort)>:is(h2,.sub),.trilhado #resort .resort,.trilhado #series .series{margin-left:68px}
+.trilhado #como{padding-left:84px}
+.trilhado .passos li{position:relative;grid-template-columns:1fr}
+.trilhado .passos .ic{position:absolute;left:-70px;top:50%;margin-top:-28px;width:56px;height:56px;box-sizing:border-box;border:3px solid var(--creme);box-shadow:0 4px 0 #0006}
+.trilhado .passos .ic img{max-width:38px;max-height:42px}
+/* séries: grade compacta; cada chave dá um giro quando o Bê chega na estação */
+#listaSeries.gira .serie img{animation:vira .7s steps(8) both}
+#listaSeries.gira .serie:nth-child(2) img{animation-delay:.12s}
+#listaSeries.gira .serie:nth-child(3) img{animation-delay:.24s}
+#listaSeries.gira .serie:nth-child(4) img{animation-delay:.36s}
+@keyframes vira{25%{transform:translateY(-8px) scaleX(0)}50%{transform:translateY(-10px) scaleX(-1)}75%{transform:translateY(-6px) scaleX(0)}}
+/* fim da trilha */
+#fim{text-align:center}
+#bauFim{display:block;width:192px;height:200px;margin:0 auto}
+#fim h2{margin-top:4px}
+#fim .relogio{justify-content:center;margin:8px 0 14px}
+#fim .sub{margin-bottom:18px}
+#fim .acoes{max-width:380px;margin:0 auto}
+#fim .agenda{justify-content:center}
+
 @media (min-width:860px){
+  .trilhado #historia{padding-left:16px;padding-right:84px}
   .hero{align-items:flex-start;justify-content:center;padding:60px 6vw 60px}
   .cartao{max-width:420px;text-align:left}
   .relogio{justify-content:flex-start}
@@ -154,12 +196,21 @@ dialog .acoes{gap:8px}
   .resort{grid-template-columns:1fr 1fr}
   .fotos{grid-template-columns:1fr 1fr}
   .foto.larga{grid-column:1/-1;aspect-ratio:21/9}
-  .fotos{width:min(1120px,calc(100vw - 48px));margin-left:50%;translate:-50% 0}
+  .fotos{width:min(1120px,calc(100vw - 48px));margin-left:calc(50% - min(560px,50vw - 24px))}
+  .trilhado #como{padding-left:16px;padding-right:84px}
+  .trilhado .passos{grid-template-columns:1fr}
+  .trilhado .passos li{text-align:left;justify-items:stretch}
+  .trilhado .passos .ic{left:auto;right:-70px}
+  .trilhado :is(#series,#chave,#resort)>:is(h2,.sub),.trilhado #series .series{margin-left:0}
+  .trilhado #series .series{margin-right:68px}
+  .trilhado #resort>:is(h2,.sub),.trilhado #resort .resort{margin-left:0;margin-right:68px}
+  #bauFim{width:288px;height:300px}
 }
 @media (prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
   .rev{opacity:1;transform:none;transition:none}
-  .desce,.serie.aberta,.relogio b.troca{animation:none}
+  .desce,.serie.aberta,.relogio b.troca,#trilha .xis,#listaSeries .serie img{animation:none}
+  .passo{opacity:1;transform:none;transition:none}
 }
 </style>
 </head>
@@ -285,6 +336,19 @@ dialog .acoes{gap:8px}
     </div>
   </section>
 
+  <section id="fim" class="rev">
+    <canvas id="bauFim" class="px" width="96" height="100" aria-hidden="true"></canvas>
+    <h2 id="fimTit">O baú abre em</h2>
+    <div class="relogio" id="fimRel" role="timer" aria-live="off">
+      <div><b id="fD">00</b><span>dias</span></div>
+      <div><b id="fH">00</b><span>horas</span></div>
+      <div><b id="fM">00</b><span>min</span></div>
+      <div><b id="fS">00</b><span>seg</span></div>
+    </div>
+    <p class="sub" id="fimSub"></p>
+    <div class="acoes" id="fimAcoes"></div>
+  </section>
+
   <section id="perguntas" class="rev">
     <h2>Perguntas</h2>
     <details><summary>É sorteio?</summary><p>Não. Não tem sorteio, prêmio nem concurso. A chave é o seu lugar na lista: com ela, você fica sabendo antes e entra antes quando o baú abrir.</p></details>
@@ -313,6 +377,6 @@ dialog .acoes{gap:8px}
 </dialog>
 
 <script src="pixel.js?v=1017"></script>
-<script src="lp.js?v=1017c"></script>
+<script src="lp.js?v=1017y"></script>
 </body>
 </html>

@@ -292,7 +292,7 @@ function desenha(t) {
   x.globalAlpha = 1;
   const f = cena.fase, k = (t - cena.tremor) * 14 | 0, [dx, lid] = k >= 0 && k < TREM.length ? TREM[k] : [0, 0];
   desenhaBau(x, t, cena.bauX, chao, {estilo: f === 'aberto' || f === 'fechado' ? 'metal' : 'madeira', forca: f === 'fechado' ? 0 : f === 'aberto' ? 1 : .35 + .65 * F.p, dx, lid, aberto: f === 'aberto'});
-  if (atlas) {
+  if (atlas && !cena.semBe) {                       // com a trilha ligada, quem desenha o Bê é ela
     const q = quadroBe(t);
     xBe.clearRect(0, 0, 40, 58); xBe.drawImage(sprite, q.fr.x, q.fr.y, 40, 58, 0, 0, 40, 58);
     const sombra = suave(.5, 1, F.p) * .38;
@@ -333,16 +333,19 @@ $('toqueBau').addEventListener('click', () => {
 });
 
 // ---------- contagem ----------
-const relogio = {alvo: 0, ult: {}};
-function tique(t) {
-  const r = Math.max(0, relogio.alvo - t) / 1000 | 0;
-  const v = {cD: r / 86400 | 0, cH: r / 3600 % 24 | 0, cM: r / 60 % 60 | 0, cS: r % 60};
-  for (const k in v) {
-    const s = String(v[k]).padStart(2, '0');
-    if (relogio.ult[k] === s) continue;
-    const e = $(k); e.textContent = s;
-    if (relogio.ult[k] !== undefined && !reduz) { e.classList.remove('troca'); void e.offsetWidth; e.classList.add('troca'); }
-    relogio.ult[k] = s;
+const relogio = {alvo: 0, fim: 0, ult: {}};
+function tique(t) {                                 // c* = contagem do topo, f* = contagem do baú no fim da trilha
+  for (const [p, alvo] of [['c', relogio.alvo], ['f', relogio.fim]]) {
+    if (!alvo) continue;
+    const r = Math.max(0, alvo - t) / 1000 | 0;
+    const v = {D: r / 86400 | 0, H: r / 3600 % 24 | 0, M: r / 60 % 60 | 0, S: r % 60};
+    for (const k in v) {
+      const id = p + k, txt = String(v[k]).padStart(2, '0');
+      if (relogio.ult[id] === txt) continue;
+      const e = $(id); e.textContent = txt;
+      if (relogio.ult[id] !== undefined && !reduz) { e.classList.remove('troca'); void e.offsetWidth; e.classList.add('troca'); }
+      relogio.ult[id] = txt;
+    }
   }
 }
 
@@ -406,10 +409,25 @@ function aplicaFase() {
   if (f === 'esquenta') { $('form').classList.add('oculto'); $('minha').classList.add('oculto'); }
   else if (ch) mostraMinha(ch, false);
   else { $('form').classList.remove('oculto'); $('minha').classList.add('oculto'); }
+  relogio.fim = {esquenta: DATAS.abre, lista: DATAS.abre, aberto: DATAS.fecha}[f] || 0;
+  $('fimRel').classList.toggle('oculto', !relogio.fim);
+  $('fimTit').textContent = {esquenta: 'O baú abre em', lista: 'O baú abre em', aberto: 'O baú abriu! Fecha em', fechado: 'O baú fechou'}[f];
+  $('fimSub').textContent = {
+    esquenta: '27 de novembro, à meia-noite. A lista das chaves abre dia 02/11.',
+    lista: '27 de novembro, à meia-noite. Quem tem a chave entra primeiro.',
+    aberto: 'Quem tem a chave já recebeu o caminho para entrar.',
+    fechado: 'Até o ano que vem. A lista continua, com as novidades de Natal, Réveillon e férias.',
+  }[f];
+  const fa = $('fimAcoes'); fa.replaceChildren();
+  if (f === 'esquenta') { const ag = el('div', {className: 'agenda'}); botoesAgenda(ag); fa.append(el('div', {className: 'px-t', textContent: 'Me avise quando a lista abrir:'}), ag); }
+  else if (f === 'lista') fa.append(ch ? el('a', {className: 'bt', href: '#chave'}, 'Ver minha chave ', nro(ch.numero)) : el('a', {className: 'bt', href: '#chave', textContent: 'Pegar minha chave'}));
+  else if (f === 'aberto') fa.append(CONFIG.revenda ? el('a', {className: 'bt', href: CONFIG.revenda, target: '_blank', rel: 'noopener', textContent: 'Entrar no baú'}) : el('button', {disabled: true, textContent: 'Entrar no baú (link a definir)'}));
+  else fa.append(el('a', {className: 'bt', href: '#chave', textContent: 'Entrar na lista'}));
+  if (relogio.fim) tique(t);
   $('bEnviar').textContent = s ? 'Pegar minha chave' : 'Entrar na lista';
   montaSeries(t);
   montaFundo();
-  if (reduz) desenha(0);
+  if (reduz) { desenha(0); desenhaBauFim(0); }
 }
 
 const cacheImg = {};
@@ -496,8 +514,7 @@ form.addEventListener('submit', async e => {
   finally { b.disabled = false; b.textContent = rot; }
 });
 function aplicaHeroChave(ch) {
-  const a = $('heroAcoes').querySelector('a.bt[href="#chave"]');
-  if (a && faseAtual === 'lista') a.replaceChildren('Ver minha chave ', nro(ch.numero));
+  if (faseAtual === 'lista') document.querySelectorAll('#heroAcoes a.bt[href="#chave"], #fimAcoes a.bt[href="#chave"]').forEach(a => a.replaceChildren('Ver minha chave ', nro(ch.numero)));
 }
 
 // ---------- tela da chave: número, série e chave girando ----------
@@ -688,6 +705,177 @@ if (!reduz && 'IntersectionObserver' in window) {
   document.querySelectorAll('.foto').forEach(fig => { fig.px = pixelaFoto(fig); fig.px(PASSOS[0]); io.observe(fig); });
 }
 
+// ---------- fim da trilha: o baú com a contagem ----------
+const bauFim = $('bauFim'), xBf = bauFim.getContext('2d'), bf = {tremor: -9, prox: 3};
+function desenhaBauFim(t) {
+  const f = cena.fase;
+  if (!reduz && (f === 'esquenta' || f === 'lista') && t > bf.prox) { bf.tremor = t; bf.prox = t + 3.4; }
+  const k = (t - bf.tremor) * 14 | 0, [dx, lid] = k >= 0 && k < TREM.length ? TREM[k] : [0, 0];
+  xBf.clearRect(0, 0, 96, 100);
+  desenhaBau(xBf, t, 28, 74, {estilo: f === 'aberto' || f === 'fechado' ? 'metal' : 'madeira', forca: f === 'fechado' ? 0 : f === 'aberto' ? 1 : .35 + .65 * cena.F.p, dx, lid, aberto: f === 'aberto'});
+}
+
+// ---------- trilha: o Bê sai do topo, passa pelo X na aérea e desce estação por estação até o baú ----------
+const tr = {pts: [], d: 0, dir: 1, sentido: 1, parado: -9, chegou: -9, naChegada: false, falou: false, falaAte: 0, falaW: 0, u: 2, sb: 2, vh: 0, W: 0, H: 0, fim: 0, m: [], passosY: [], chave: '', sbAtual: 0, falas: [], falaMsg: '', yB: 0};
+const trilha = document.createElement('div');
+trilha.id = 'trilha'; trilha.setAttribute('aria-hidden', 'true');
+trilha.innerHTML = '<canvas class="tr-falta"></canvas><canvas class="tr-feita"></canvas>' + ['01', '02', '03', '04', '05', '06'].map(n => `<span class="marco">${n}</span>`).join('') + '<canvas class="xis" width="18" height="18"></canvas>'; 
+const trilhaBe = document.createElement('div');     // camada do Bê acima dos selos; a estrada fica embaixo deles
+trilhaBe.id = 'trilhaBe'; trilhaBe.setAttribute('aria-hidden', 'true');
+trilhaBe.innerHTML = '<canvas class="be" width="40" height="58"></canvas><div id="falaT"></div>';
+document.body.append(trilha, trilhaBe);
+const [cvFalta, cvFeita] = trilha.children, cvX = trilha.querySelector('.xis'), cvBe = trilhaBe.querySelector('.be'), balaoT = trilhaBe.querySelector('#falaT'), marcos = trilha.querySelectorAll('.marco'), xTb = cvBe.getContext('2d');
+const hist = $('historia'), aer = $('aerea'), passos = [...hist.children], estacoes = ['como', 'series', 'chave', 'resort'].map(id => $(id).querySelector('h2'));
+document.documentElement.classList.add('trilhado');
+hist.classList.remove('rev');
+passos.forEach(p => p.classList.add('passo', ...(reduz || Q.has('revela') ? ['vis'] : [])));
+if (reduz) { trilha.classList.add('fixa'); trilhaBe.classList.add('fixa'); }
+
+function caminho(pts, raio) {                       // polilinha com cantos arredondados, amostrada a cada ~1 px, com a distância acumulada
+  const out = [], add = (x, y) => { const a = out[out.length - 1]; out.push({x, y, d: a ? a.d + Math.hypot(x - a.x, y - a.y) : 0}); };
+  const reta = (ax, ay, bx, by) => { const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay))); for (let i = 1; i <= n; i++) add(ax + (bx - ax) * i / n, ay + (by - ay) * i / n); };
+  let [x0, y0] = pts[0]; add(x0, y0);
+  for (let i = 1; i < pts.length; i++) {
+    const [px, py] = pts[i];
+    if (i === pts.length - 1) { reta(x0, y0, px, py); break; }
+    const [nx, ny] = pts[i + 1], l1 = Math.hypot(px - x0, py - y0), l2 = Math.hypot(nx - px, ny - py), r = Math.min(raio, l1 / 2, l2 / 2);
+    const ax = px - (px - x0) / l1 * r, ay = py - (py - y0) / l1 * r, bx = px + (nx - px) / l2 * r, by = py + (ny - py) / l2 * r;
+    reta(x0, y0, ax, ay);
+    const n = Math.max(2, Math.ceil(r * 1.6));
+    for (let k = 1; k <= n; k++) { const s = k / n, q = 1 - s; add(q * q * ax + 2 * q * s * px + s * s * bx, q * q * ay + 2 * q * s * py + s * s * by); }
+    x0 = bx; y0 = by;
+  }
+  return out;
+}
+function busca(campo, v) {                          // a trilha só desce: y e d crescem juntos
+  const p = tr.pts; let a = 0, b = p.length - 1;
+  if (v <= p[0][campo]) b = 1; else if (v >= p[b][campo]) a = b - 1;
+  else while (b - a > 1) { const m = a + b >> 1; if (p[m][campo] < v) a = m; else b = m; }
+  return [a, b, Math.min(1, Math.max(0, (v - p[a][campo]) / ((p[b][campo] - p[a][campo]) || 1)))];
+}
+const porY = y => { const [a, b, k] = busca('y', y); return tr.pts[a].d + (tr.pts[b].d - tr.pts[a].d) * k; };
+function ponto(d) {
+  const p = tr.pts, [a, b, k] = busca('d', d), i0 = Math.max(0, a - 8), i1 = Math.min(p.length - 1, b + 8);
+  return {x: p[a].x + (p[b].x - p[a].x) * k, y: p[a].y + (p[b].y - p[a].y) * k, tx: (p[i1].x - p[i0].x) / ((p[i1].d - p[i0].d) || 1)};
+}
+
+function montaTrilha() {
+  if (!cena.W) return;
+  const s = cena.s, sy = scrollY, W = document.documentElement.clientWidth, largo = W >= 860, R = e => e.getBoundingClientRect(), Y = r => r.top + sy;
+  const rH = R(hero), rS = R(hist), rA = R(aer), rT = R(hist.querySelector('h2'));
+  const u = tr.u = tr.sb = largo ? 3 : 2;
+  tr.vh = innerHeight; tr.W = W;
+  const A = [Math.round(rH.left + cena.beX * s), Math.round(rH.top + sy + cena.chao * s)];
+  const fimH = rH.bottom + sy, faixa = Math.round(largo ? rS.right - 42 : rS.left + 42), topoA = Y(rA), hA = rA.height, botA = topoA + hA;
+  const foto = largo ? [[.62, .16], [.42, .34], [.5, .5]] : [[.74, .18], [.28, .36], [.62, .52]];
+  const [p4, p5, X] = foto.map(([fx, fy]) => [Math.round(W * fx), Math.round(topoA + hA * fy)]);
+  const saida = largo ? [[faixa, Math.round(topoA + hA * .72)]] : [[Math.round(W * .86), Math.round(topoA + hA * .66)], [Math.round(W * .86), Math.round(botA - 30)], [faixa, Math.round(botA + 30)]];
+  const rF = R(document.querySelector('#resort .fotos')), fts = [...document.querySelectorAll('#resort .foto')].map(R);
+  const zz = (largo ? [[.62, .5], [.5, .35], [.5, .65]] : [[.32, .55], [.7, .5], [.22, .5]]).map(([fx, fy], i) => [Math.round(fts[i].left + fts[i].width * fx), Math.round(Y(fts[i]) + fts[i].height * fy)]);
+  const rB = R(bauFim), bs = rB.width / 96, cB = Math.round(rB.left + 48.5 * bs), yB = tr.yB = Math.round(Y(rB) + 74 * bs);   // chão do baú do fim
+  const lx = zz[2][0], lado = lx < cB ? -1 : 1, para = Math.round(cB + lado * 32.5 * bs), pre = lado < 0 ? Math.min(lx, para - 40) : Math.max(lx, para + 40);
+  tr.pts = caminho([A, [A[0], fimH - 12], [faixa, fimH + 56], [faixa, topoA - 70], p4, p5, X, ...saida, [faixa, Math.round(Y(rF) - 50)], ...zz, [pre, yB - 2], [cB, yB]], 46);
+  const total = tr.pts[tr.pts.length - 1].d;
+  tr.fim = total - Math.abs(cB - para);             // o Bê para do lado do baú; a estrada termina por baixo dele
+  tr.yHist = rS.top + sy;
+  tr.H = yB + 40;
+  for (const c of [trilha, trilhaBe]) Object.assign(c.style, {width: W + 'px', height: tr.H + 'px'});
+  const Wu = Math.ceil(W / u), Hu = Math.ceil(tr.H / u);
+  for (const c of [cvFalta, cvFeita]) { Object.assign(c, {width: Wu, height: Hu}); Object.assign(c.style, {width: Wu * u + 'px', height: Hu * u + 'px'}); }
+  const mapas = [[topoA, botA], [Y(rF), Y(rF) + rF.height]], us = []; let ult = '';   // sobre as fotos a estrada vira tracejado de mapa
+  for (const p of tr.pts) { const ux = Math.round(p.x / u), uy = Math.round(p.y / u), k = ux + ',' + uy; if (k !== ult) { us.push({x: ux, y: uy, d: p.d / u, foto: mapas.some(([a, b]) => p.y >= a && p.y <= b)}); ult = k; } }
+  const xF = cvFeita.getContext('2d'), xA = cvFalta.getContext('2d');
+  const terra = us.filter(p => !p.foto), mapa = us.filter(p => p.foto);
+  for (const p of terra) circulo(xF, p.x, p.y, 4, '#3B2410');            // estrada: contorno escuro, faixa creme, tracejado de ouro
+  for (const p of terra) circulo(xF, p.x, p.y, 3, '#FFF3D6');
+  xF.fillStyle = '#EF9F27'; for (const p of terra) if (Math.floor(p.d / 3) % 2 === 0) xF.fillRect(p.x, p.y, 1, 1);
+  const traco = mapa.filter(p => Math.floor(p.d / 4) % 2 === 0);
+  xF.fillStyle = '#3B2410'; for (const p of traco) xF.fillRect(p.x - 2, p.y - 2, 5, 5);
+  xF.fillStyle = '#FAC775'; for (const p of traco) xF.fillRect(p.x - 1, p.y - 1, 3, 3);
+  const pontos = []; let ultD = -9;                 // o que falta andar: pontinhos
+  for (const p of us) if (p.d - ultD >= 7) { pontos.push(p); ultD = p.d; }
+  xA.fillStyle = '#3B2410'; for (const p of pontos) xA.fillRect(p.x - 2, p.y - 2, 4, 4);
+  xA.fillStyle = '#FFF3D6'; for (const p of pontos) xA.fillRect(p.x - 1, p.y - 1, 2, 2);
+  const xX = cvX.getContext('2d'), cruz = [];
+  for (let i = 0; i < 14; i++) for (let k = 0; k < 3; k++) cruz.push([1 + i + k, 2 + i], [14 - i + k, 2 + i]);
+  xX.clearRect(0, 0, 18, 18);
+  xX.fillStyle = '#3B2410'; for (const [i, j] of cruz) xX.fillRect(i - 1, j - 1, 3, 3);
+  xX.fillStyle = '#E0483B'; for (const [i, j] of cruz) xX.fillRect(i, j, 1, 1);
+  Object.assign(cvX.style, {width: 18 * u + 'px', height: 18 * u + 'px', left: X[0] - 9 * u + 'px', top: X[1] - 9 * u + 'px'});
+  const ys = [rT, ...estacoes.map(R)].map(r => Y(r) + r.height / 2);   // marcos: título da história, borda da aérea e um por estação
+  ys.splice(1, 0, topoA);
+  tr.m = ys.map(porY);
+  tr.m.forEach((d, i) => Object.assign(marcos[i].style, {left: Math.round(ponto(d).x) + 'px', top: Math.round(ys[i]) + 'px'}));
+  tr.passosY = passos.map(p => p.getBoundingClientRect().top + sy);
+  const rC = R(document.querySelector('#chave .cartinha'));
+  tr.falas = [[porY(X[1]), 'É aqui?'], [porY(Math.max(X[1] + 80, botA - 120)), 'Ainda não. Vem!'], [porY(Y(rC) - 150), 'Pega a sua chave!']].map(([d, msg]) => ({d, msg, feita: tr.d >= d}));
+  tr.ySer = Y(R($('listaSeries')));
+  tr.chave = '';
+  if (reduz) { marcos.forEach(m => m.classList.add('on')); return; }
+  cena.semBe = true;
+  trPede();
+}
+
+function falaTrilha(msg, t) { tr.falaMsg = msg; balaoT.textContent = msg; tr.falaW = balaoT.offsetWidth; tr.falaAte = t + 2.2; }
+let trRaf = 0, trUlt = 0, trVis = true;
+function trQuadro(ms) {
+  trRaf = 0;
+  if (!tr.pts.length || !trVis || document.hidden) return;
+  const t = ms / 1000, dt = Math.min(.1, (ms - (trUlt || ms)) / 1000), yAlvo = scrollY + tr.vh * .6;
+  trUlt = ms;
+  const alvo = Math.min(tr.fim, porY(yAlvo)), antes = tr.d;
+  tr.d += (alvo - tr.d) * Math.min(1, dt * 9);      // segue a rolagem com um leve atraso, para o passo não travar
+  if (Math.abs(alvo - tr.d) < .3) tr.d = alvo;
+  if (Math.abs(tr.d - antes) > .05) { tr.parado = t; tr.sentido = Math.sign(tr.d - antes); }
+  const p = ponto(tr.d), inicio = tr.d < 30, sb = inicio ? cena.s : tr.sb;
+  if (!inicio && Math.abs(p.tx) > .25) tr.dir = Math.sign(p.tx) * tr.sentido;
+  if (!tr.falou && scrollY > 30) { tr.falou = true; falaTrilha('Vem comigo!', t); }   // fala ainda no topo, antes de sair andando
+  if (tr.falaMsg === 'Vem comigo!' && p.y > tr.yHist) tr.falaAte = Math.min(tr.falaAte, t);   // e cala antes de chegar no texto
+  for (const f of tr.falas) {                       // falas das estações, só descendo
+    if (!f.feita && tr.d >= f.d) { f.feita = true; if (tr.d - f.d < 80) falaTrilha(f.msg, t); }
+    else if (f.feita && tr.d < f.d - 120) f.feita = false;
+  }
+  if (tr.d >= tr.fim - .5 && !tr.naChegada) { tr.naChegada = true; tr.chegou = t; bf.tremor = t; falaTrilha({aberto: 'Abriu!', fechado: 'Fechou!'}[cena.fase] || 'Trancado!', t); }
+  if (tr.d < tr.fim - 20) tr.naChegada = false;
+  passos.forEach((el, i) => { if (yAlvo + 140 >= tr.passosY[i]) el.classList.add('vis'); });
+  marcos.forEach((m, i) => m.classList.toggle('on', tr.d >= tr.m[i] - 4));
+  if (yAlvo >= tr.ySer + 60) $('listaSeries').classList.add('gira');   // as quatro chaves giram uma vez, em sequência
+  if (Math.abs(scrollY + tr.vh / 2 - tr.yB) < tr.vh) desenhaBauFim(t);
+  cvFeita.style.clipPath = `inset(0 0 ${Math.max(0, tr.H - p.y)}px 0)`;
+  cvFalta.style.clipPath = `inset(${Math.max(0, p.y)}px 0 0 0)`;
+  if (atlas) {
+    let fr, dy = 0;
+    if (tr.d < 2) ({fr, dy} = quadroBe(t));
+    else if (t - tr.parado < .25) fr = atlas.animations.run.frames[Math.floor(tr.d / (3.2 * sb)) % 6];
+    else if (tr.naChegada && t - tr.chegou < 1.6) fr = quadro('win', t - tr.chegou);
+    else fr = quadro('idle', t);
+    const tinta = suave(.5, 1, cena.F.p) * .38 * Math.max(0, 1 - tr.d / 150), chave = fr.x + ',' + fr.y + ',' + tinta.toFixed(2);
+    if (chave !== tr.chave) {
+      tr.chave = chave;
+      xTb.clearRect(0, 0, 40, 58);
+      xTb.globalAlpha = .3; xTb.fillStyle = '#000000'; xTb.fillRect(12, 56, 16, 1); xTb.globalAlpha = 1;
+      xTb.drawImage(sprite, fr.x, fr.y, 40, 58, 0, 0, 40, 58);
+      if (tinta) { xTb.globalCompositeOperation = 'source-atop'; xTb.globalAlpha = tinta; xTb.fillStyle = '#1B1430'; xTb.fillRect(0, 0, 40, 56); xTb.globalAlpha = 1; xTb.globalCompositeOperation = 'source-over'; }
+    }
+    if (sb !== tr.sbAtual) { tr.sbAtual = sb; Object.assign(cvBe.style, {width: 40 * sb + 'px', height: 58 * sb + 'px'}); }
+    cvBe.style.transform = `translate(${Math.round(p.x - 20 * sb)}px,${Math.round(p.y - 56 * sb + dy * sb)}px) scaleX(${tr.dir})`;
+  }
+  const fala = t < tr.falaAte;
+  balaoT.classList.toggle('on', fala);
+  if (fala) Object.assign(balaoT.style, {left: Math.min(tr.W - tr.falaW / 2 - 6, Math.max(tr.falaW / 2 + 6, p.x)) + 'px', top: p.y - 50 * sb - 12 + 'px'});
+  trPede();
+}
+function trPede() { if (!trRaf && !reduz && tr.pts.length) trRaf = requestAnimationFrame(trQuadro); }
+let trRz = 0, trLarg = 0;
+const agendaTrilha = () => { clearTimeout(trRz); trRz = setTimeout(montaTrilha, 200); };
+if ('IntersectionObserver' in window) new IntersectionObserver(([e]) => { trVis = e.isIntersecting; trPede(); }).observe(trilha);
+document.addEventListener('visibilitychange', trPede);
+new ResizeObserver(agendaTrilha).observe(document.querySelector('main'));
+new ResizeObserver(agendaTrilha).observe(hero);
+addEventListener('resize', () => { const w = document.documentElement.clientWidth; if (w !== trLarg) { trLarg = w; agendaTrilha(); } });
+addEventListener('load', agendaTrilha);
+document.fonts && document.fonts.ready.then(agendaTrilha);
+
 // ---------- revelar seções ao rolar ----------
 const revs = document.querySelectorAll('.rev');
 if (reduz || Q.has('revela') || !('IntersectionObserver' in window)) revs.forEach(r => r.classList.add('vis'));
@@ -709,7 +897,7 @@ new ResizeObserver(() => { clearTimeout(rz); rz = setTimeout(dimensiona, 120); }
 setInterval(() => {
   const t = agora();
   if (faseEm(t) !== faseAtual) aplicaFase();
-  else if (relogio.alvo) tique(t);
+  else if (relogio.alvo || relogio.fim) tique(t);
   if (Math.abs(progresso(t) - cena.F.p) > .003) montaFundo();
 }, 1000);
 pede();
