@@ -15,7 +15,8 @@ const semente = s => () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
 const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 const el = (tag, props = {}, ...filhos) => { const e = Object.assign(document.createElement(tag), props); e.append(...filhos); return e; };
 const nro = n => el('span', {className: 'nro'}, 'n', el('sup', {textContent: 'o'}), ' ' + pad(n));   // a Jersey 10 desenha º como "o" comum
-const reduz = !/[?&]anima(&|=|$)/.test(location.search) && matchMedia('(prefers-reduced-motion: reduce)').matches;   // ?anima força o movimento na revisão; reduzido corta tremor, pulos e trilha, mas o céu, o Bê respirando e o brilho do baú seguem
+const reduz = /[?&]parado(&|=|$)/.test(location.search);   // ?parado congela tudo para revisão
+const calmo = reduz || (!/[?&]anima(&|=|$)/.test(location.search) && matchMedia('(prefers-reduced-motion: reduce)').matches);   // movimento reduzido do sistema: só some o tremor do baú e o pulinho do Bê; trilha, céu e brilho seguem
 const guarda = {
   ler: k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
   por: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
@@ -249,7 +250,7 @@ function tremor(t, forte) {
 
 function atualiza(t, dt) {
   const f = cena.fase;
-  if (!reduz && (f === 'esquenta' || f === 'lista') && t >= cena.proxTremor) {   // o baú fica mais agitado perto do dia 27
+  if (!calmo && (f === 'esquenta' || f === 'lista') && t >= cena.proxTremor) {   // o baú fica mais agitado perto do dia 27
     tremor(t);
     cena.proxTremor = t + (f === 'lista' ? 7 - 4.5 * cena.F.p : 8) * (.7 + Math.random() * .6);
   }
@@ -314,7 +315,7 @@ function laco(ms) {
   if (ms - ultimo >= 33) { const t = ms / 1000; atualiza(t, Math.min(.1, (ms - ultimo) / 1000)); ultimo = ms; desenha(t); }
   pede();
 }
-function pede() { if (!rodando) { rodando = true; requestAnimationFrame(laco); } }
+function pede() { if (!rodando && !reduz) { rodando = true; requestAnimationFrame(laco); } }
 new IntersectionObserver(([e]) => { visivel = e.isIntersecting; pede(); }).observe(hero);
 document.addEventListener('visibilitychange', pede);
 
@@ -326,9 +327,10 @@ function fala(msg) {
 }
 $('toqueBau').addEventListener('click', () => {
   const t = performance.now() / 1000, lista = FALAS[cena.fase] || FALAS.esquenta;
-  if (cena.fase !== 'aberto' && !reduz) tremor(t, true);
+  if (cena.fase !== 'aberto' && !calmo) tremor(t, true);
   cena.be = {nome: 'win', ini: t, ate: t + 1.6};
   fala(lista[cena.falaI++ % lista.length]);
+  if (reduz) desenha(t);
 });
 
 // ---------- contagem ----------
@@ -708,17 +710,10 @@ if (!reduz && 'IntersectionObserver' in window) {
 const bauFim = $('bauFim'), xBf = bauFim.getContext('2d'), bf = {tremor: -9, prox: 3};
 function desenhaBauFim(t) {
   const f = cena.fase;
-  if (!reduz && (f === 'esquenta' || f === 'lista') && t > bf.prox) { bf.tremor = t; bf.prox = t + 3.4; }
+  if (!calmo && (f === 'esquenta' || f === 'lista') && t > bf.prox) { bf.tremor = t; bf.prox = t + 3.4; }
   const k = (t - bf.tremor) * 14 | 0, [dx, lid] = k >= 0 && k < TREM.length ? TREM[k] : [0, 0];
   xBf.clearRect(0, 0, 96, 100);
   desenhaBau(xBf, t, 28, 74, {estilo: f === 'aberto' || f === 'fechado' ? 'metal' : 'madeira', forca: f === 'fechado' ? 0 : f === 'aberto' ? 1 : .35 + .65 * cena.F.p, dx, lid, aberto: f === 'aberto'});
-}
-if (reduz && 'IntersectionObserver' in window) {   // sem a trilha, o baú do fim ganha o próprio laço só para o brilho
-  let bfVis = false, bfRaf = 0, bfUlt = 0;
-  const bfLaco = ms => { bfRaf = 0; if (!bfVis || document.hidden) return; if (ms - bfUlt >= 33) { bfUlt = ms; desenhaBauFim(ms / 1000); } bfRaf = requestAnimationFrame(bfLaco); };
-  const bfPede = () => { if (!bfRaf && bfVis) bfRaf = requestAnimationFrame(bfLaco); };
-  new IntersectionObserver(([e]) => { bfVis = e.isIntersecting; bfPede(); }).observe(bauFim);
-  document.addEventListener('visibilitychange', bfPede);
 }
 
 // ---------- trilha: o Bê sai do topo, passa pelo X na aérea e desce estação por estação até o baú ----------
@@ -846,7 +841,7 @@ function trQuadro(ms) {
     if (!f.feita && tr.d >= f.d) { f.feita = true; if (tr.d - f.d < 80) falaTrilha(f.msg, t); }
     else if (f.feita && tr.d < f.d - 120) f.feita = false;
   }
-  if (tr.d >= tr.fim - .5 && !tr.naChegada) { tr.naChegada = true; tr.chegou = t; bf.tremor = t; falaTrilha({aberto: 'Abriu!', fechado: 'Fechou!'}[cena.fase] || 'Trancado!', t); }
+  if (tr.d >= tr.fim - .5 && !tr.naChegada) { tr.naChegada = true; tr.chegou = t; if (!calmo) bf.tremor = t; falaTrilha({aberto: 'Abriu!', fechado: 'Fechou!'}[cena.fase] || 'Trancado!', t); }
   if (tr.d < tr.fim - 20) tr.naChegada = false;
   passos.forEach((el, i) => { if (yAlvo + 140 >= tr.passosY[i]) el.classList.add('vis'); });
   marcos.forEach((m, i) => m.classList.toggle('on', tr.d >= tr.m[i] - 4));
